@@ -184,3 +184,32 @@ class Environment:
         print("=" * (self.width + 2))
         print("Legend: D=Drone, S=Start, G=Goal, #=Obstacle, .=Empty\n")
 
+
+# Example usage demonstration
+if __name__ == "__main__":
+    # Create a 10x10 environment
+    env = Environment(width=10, height=10)
+    
+    # Set start and goal
+    env.set_start(1, 1)
+    env.set_goal(8, 8)
+    
+    # Add some obstacles
+    obstacles = [
+        (3, 3), (3, 4), (3, 5),
+        (6, 2), (6, 3), (6, 4),
+        (7, 6), (8, 6)
+    ]
+    env.add_obstacles(obstacles)
+    
+    # Visualize
+    env.visualize(drone_position=(1, 1))
+    
+    # Test some functions
+    print(f"Is (5, 5) valid? {env.is_valid_position(5, 5)}")
+    print(f"Is (3, 3) valid? {env.is_valid_position(3, 3)}")
+    print(f"Distance from (1,1) to goal: {env.distance_to_goal(1, 1)}")
+    
+    nearest = env.get_nearest_obstacle(5, 5)
+    if nearest:
+        print(f"Nearest obstacle to (5,5): {nearest[0]} at distance {nearest[1]}")
