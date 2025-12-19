@@ -6,7 +6,6 @@ Game-theoretic approach to drone navigation in GPS-denied environments.
 
 ```bash
 cd gps-denied-drone-navigation
-$env:PYTHONPATH="$PWD"
 python backend/main.py
 ```
 
