@@ -215,31 +215,31 @@ def test_payoff_function():
     print("\n--- Overall Payoff Examples ---")
     
     # Scenario 1: Good progress, safe
-    payoff1 = payoff_func.compute_payoff(
+    drone_payoff1, env_payoff1 = payoff_func.compute_payoff(
         DroneAction.MOVE_UP, EnvironmentCondition.CLEAR_PATH,
         current_pos=(10, 10), goal_pos=(18, 18), initial_distance=24.0,
         battery_used=30, total_battery=100, distance_to_nearest_obstacle=5.0,
         explored_cells=150, total_cells=400, collision=False, environment=env
     )
-    print(f"Scenario 1 (good progress, safe): {payoff1:.3f}")
+    print(f"Scenario 1 (good progress, safe): Drone={drone_payoff1:.1f}, Env={env_payoff1:.1f}")
     
     # Scenario 2: Near obstacle, risky
-    payoff2 = payoff_func.compute_payoff(
+    drone_payoff2, env_payoff2 = payoff_func.compute_payoff(
         DroneAction.MOVE_RIGHT, EnvironmentCondition.OBSTACLE_AHEAD,
         current_pos=(10, 10), goal_pos=(18, 18), initial_distance=24.0,
         battery_used=30, total_battery=100, distance_to_nearest_obstacle=0.8,
         explored_cells=150, total_cells=400, collision=False, environment=env
     )
-    print(f"Scenario 2 (near obstacle, risky): {payoff2:.3f}")
+    print(f"Scenario 2 (near obstacle, risky): Drone={drone_payoff2:.1f}, Env={env_payoff2:.1f}")
     
     # Scenario 3: Reached goal
-    payoff3 = payoff_func.compute_payoff(
+    drone_payoff3, env_payoff3 = payoff_func.compute_payoff(
         DroneAction.STAY, EnvironmentCondition.CLEAR_PATH,
         current_pos=(18, 18), goal_pos=(18, 18), initial_distance=24.0,
         battery_used=70, total_battery=100, distance_to_nearest_obstacle=3.0,
         explored_cells=250, total_cells=400, collision=False, environment=env
     )
-    print(f"Scenario 3 (reached goal): {payoff3:.3f}")
+    print(f"Scenario 3 (reached goal): Drone={drone_payoff3:.1f}, Env={env_payoff3:.1f}")
     
     # Generate a simple payoff matrix
     print("\n--- Payoff Matrix Example ---")
@@ -259,11 +259,14 @@ def test_payoff_function():
         'environment': env
     }
     
-    matrix = payoff_func.generate_payoff_matrix(drone_actions, env_conditions, state_params)
-    print(f"\nPayoff Matrix (rows=actions, cols=conditions):")
+    drone_matrix, env_matrix = payoff_func.generate_payoff_matrix(drone_actions, env_conditions, state_params)
+    print(f"\nPayoff Matrices (rows=actions, cols=conditions):")
     print(f"Actions: {[a.value for a in drone_actions]}")
     print(f"Conditions: {[c.value for c in env_conditions]}")
-    print(matrix)
+    print("\nDrone Payoff Matrix:")
+    print(drone_matrix)
+    print("\nEnvironment Payoff Matrix:")
+    print(env_matrix)
     
     return payoff_func
 
@@ -360,26 +363,25 @@ def main():
     # Comment out strategies you don't want to test
     
     drone_strategies_to_test =  [
-        #('Uniform', DroneStrategies.create_uniform_mixed_strategy()),
-        # ('Cautious', DroneStrategies.create_cautious_strategy()),
-        # ('Aggressive', DroneStrategies.create_aggressive_strategy()),
-        # ('Balanced', DroneStrategies.create_balanced_strategy()),
-        # Custom: Exploration mode (favor movement in all directions)
+        ('Uniform', DroneStrategies.create_uniform_mixed_strategy()),
+        ('Cautious', DroneStrategies.create_cautious_strategy()),
+        ('Aggressive', DroneStrategies.create_aggressive_strategy()),
+        ('Balanced', DroneStrategies.create_balanced_strategy()),
+        # Custom: Exploration mode (favor movement in all directions, only 4 actions)
         ('Custom_Exploration', DroneStrategies.create_custom_strategy({
            DroneAction.MOVE_UP: 0.3,
            DroneAction.MOVE_DOWN: 0.2,
            DroneAction.MOVE_LEFT: 0.25,
-           DroneAction.MOVE_RIGHT: 0.25,
-           DroneAction.STAY: 0.0,
-           DroneAction.ROTATE: 0.0
+           DroneAction.MOVE_RIGHT: 0.25
+           # Note: STAY and ROTATE omitted - tests probability lookup fix
          }))
     ]
     
     env_strategies_to_test = [
-        #('Uniform', EnvironmentStrategies.create_uniform_mixed_strategy()),
-        # ('Typical', EnvironmentStrategies.create_typical_conditions()),
-        # ('Adversarial', EnvironmentStrategies.create_adversarial_conditions()),
-        # ('Favorable', EnvironmentStrategies.create_favorable_conditions()),
+        ('Uniform', EnvironmentStrategies.create_uniform_mixed_strategy()),
+        ('Typical', EnvironmentStrategies.create_typical_conditions()),
+        ('Adversarial', EnvironmentStrategies.create_adversarial_conditions()),
+        ('Favorable', EnvironmentStrategies.create_favorable_conditions()),
         # Custom: Danger zone (high obstacle probability)
         ('Custom_DangerZone', EnvironmentStrategies.create_custom_strategy({
             EnvironmentCondition.CLEAR_PATH: 0.15,
@@ -387,14 +389,14 @@ def main():
             EnvironmentCondition.LOW_VISIBILITY: 0.2,
             EnvironmentCondition.SENSOR_NOISE: 0.1,
             EnvironmentCondition.LIGHTING_CHANGE: 0.05
-            
         }))
     ]
     
     # Run simulation with custom strategies
-    pure_results, mixed_results = test_strategy_simulation(env, payoff_func, 
-                                                          drone_strategies_to_test, 
-                                                          env_strategies_to_test)
+    pure_results, mixed_results = test_strategy_simulation(env, payoff_func,drone_strategies_to_test,env_strategies_to_test)
+    
+    # Test logger
+    test_logger()
 
 
 if __name__ == "__main__":
