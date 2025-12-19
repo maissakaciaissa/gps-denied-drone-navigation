@@ -7,14 +7,17 @@ from backend.core.environment import Environment
 class PayoffFunction:
     """
     Calculates payoffs for drone actions considering multiple objectives.
+    Returns (drone_payoff, env_payoff) tuples for game theory analysis.
     
     Payoff formula:
     u_drone(s_drone, s_env) = w1·mission_success - w2·energy_consumed 
                              - w3·collision_risk + w4·map_quality
+    u_env(s_drone, s_env) = opposite goals (environment prefers obstacles, delays)
     """
     
     def __init__(self, w1: float = 0.4, w2: float = 0.2, w3: float = 0.3, w4: float = 0.1,
-                 collision_severity: str = "terminal", collision_penalty: float = 0.5):
+                 collision_severity: str = "terminal", collision_penalty: float = 0.5,
+                 payoff_scale: float = 10.0):
         """
         Initialize payoff function with weights.
         
@@ -25,6 +28,7 @@ class PayoffFunction:
             w4: Weight for map_quality (default 0.1)
             collision_severity: "terminal" (mission ends, score=0) or "penalty" (deduct points, continue)
             collision_penalty: Penalty amount for collision in penalty mode (default 0.5)
+            payoff_scale: Multiplier to make payoffs more dramatic (default 10.0)
             
         Constraint: w1 + w2 + w3 + w4 must equal 1.0
         """
@@ -40,6 +44,7 @@ class PayoffFunction:
         self.w4 = w4  # map_quality
         self.collision_severity = collision_severity
         self.collision_penalty = collision_penalty
+        self.payoff_scale = payoff_scale  # Scale payoffs for more dramatic differences
         
     def calculate_mission_success(self, current_pos: Tuple[int, int], 
                                   goal_pos: Tuple[int, int], 
@@ -156,9 +161,10 @@ class PayoffFunction:
                       explored_cells: int,
                       total_cells: int,
                       collision: bool = False,
-                      environment: Environment = None) -> float:
+                      environment: Environment = None) -> Tuple[float, float]:
         """
         Compute the overall payoff for a drone action and environment condition.
+        Returns (drone_payoff, env_payoff) tuple.
         
         Args:
             drone_action: Action taken by the drone
@@ -175,7 +181,7 @@ class PayoffFunction:
             environment: Environment instance for distance calculations
             
         Returns:
-            Overall payoff score
+            Tuple of (drone_payoff, environment_payoff)
         """
         # Simulate the result of taking this action under this condition
         x, y = current_pos
@@ -184,7 +190,7 @@ class PayoffFunction:
         action_exploration = 0
         action_collision = False
         
-        # Map action to position change and energy cost
+        # Map action to position change and energy cost (ACTION-SPECIFIC)
         if drone_action == DroneAction.MOVE_UP:
             new_pos = (x, y + 1)
             action_energy = 5
@@ -203,32 +209,12 @@ class PayoffFunction:
             action_exploration = 1
         elif drone_action == DroneAction.STAY:
             new_pos = current_pos
-            action_energy = 1
+            action_energy = 1  # STAY costs much less energy
             action_exploration = 0
         elif drone_action == DroneAction.ROTATE:
             new_pos = current_pos
-            action_energy = 2
+            action_energy = 2  # ROTATE costs less than moving
             action_exploration = 0
-        
-        # Environmental condition affects collision and energy
-        collision_multiplier = 1.0
-        energy_multiplier = 1.0
-        
-        if env_condition == EnvironmentCondition.CLEAR_PATH:
-            collision_multiplier = 0.5  # Lower risk
-            energy_multiplier = 1.0
-        elif env_condition == EnvironmentCondition.OBSTACLE_AHEAD:
-            collision_multiplier = 3.0  # Much higher risk
-            energy_multiplier = 1.2  # More energy to navigate
-        elif env_condition == EnvironmentCondition.LOW_VISIBILITY:
-            collision_multiplier = 1.5
-            energy_multiplier = 1.3  # Slower, more careful
-        elif env_condition == EnvironmentCondition.SENSOR_NOISE:
-            collision_multiplier = 1.8
-            energy_multiplier = 1.1
-        elif env_condition == EnvironmentCondition.LIGHTING_CHANGE:
-            collision_multiplier = 1.2
-            energy_multiplier = 1.0
         
         # Check if new position causes collision
         if environment is not None:
@@ -236,10 +222,50 @@ class PayoffFunction:
                 action_collision = True
                 new_pos = current_pos  # Stay at current position if collision
         
-        # Calculate new state values
-        new_battery_used = battery_used + (action_energy * energy_multiplier)
+        # Calculate new state values FIRST (needed for collision multiplier logic)
+        new_battery_used = battery_used + action_energy  # Will multiply by energy_multiplier later
         new_explored = explored_cells + action_exploration
         new_obstacle_dist = environment.get_nearest_obstacle_distance(new_pos) if environment else distance_to_nearest_obstacle
+        
+        # Environmental condition affects collision and energy (CONDITION-SPECIFIC)
+        collision_multiplier = 1.0
+        energy_multiplier = 1.0
+        
+        if env_condition == EnvironmentCondition.CLEAR_PATH:
+            collision_multiplier = 0.2  # Very low risk
+            energy_multiplier = 1.0
+        elif env_condition == EnvironmentCondition.OBSTACLE_AHEAD:
+            # Only apply high penalty if actually moving into danger
+            # Check if this move would reduce obstacle distance (moving toward obstacle)
+            if drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN, 
+                               DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
+                # Check if new position is closer to obstacle or is invalid
+                if action_collision or (environment and new_obstacle_dist < distance_to_nearest_obstacle):
+                    collision_multiplier = 5.0  # DRAMATIC: Actually moving toward/into obstacle
+                else:
+                    collision_multiplier = 1.5  # Moderate: obstacle exists but not moving toward it
+            else:
+                collision_multiplier = 1.0  # STAY/ROTATE is safe even with obstacle
+            energy_multiplier = 1.5  # More energy to navigate
+        elif env_condition == EnvironmentCondition.LOW_VISIBILITY:
+            collision_multiplier = 2.0
+            energy_multiplier = 1.3  # Slower, more careful
+        elif env_condition == EnvironmentCondition.SENSOR_NOISE:
+            collision_multiplier = 2.5
+            energy_multiplier = 1.1
+        elif env_condition == EnvironmentCondition.LIGHTING_CHANGE:
+            collision_multiplier = 1.5
+            energy_multiplier = 1.0
+        
+        # Apply energy multiplier to battery
+        new_battery_used = battery_used + (action_energy * energy_multiplier)
+        
+        # Calculate if moving toward or away from goal (DIRECTIONAL AWARENESS)
+        current_dist_to_goal = environment.distance_to_goal(current_pos) if environment else np.linalg.norm(np.array(goal_pos) - np.array(current_pos))
+        new_dist_to_goal = environment.distance_to_goal(new_pos) if environment else np.linalg.norm(np.array(goal_pos) - np.array(new_pos))
+        
+        moving_toward_goal = new_dist_to_goal < current_dist_to_goal
+        moving_away_from_goal = new_dist_to_goal > current_dist_to_goal
         
         # Apply collision multiplier to risk
         effective_collision_risk = self.calculate_collision_risk(new_obstacle_dist) * collision_multiplier
@@ -249,6 +275,11 @@ class PayoffFunction:
             new_pos, goal_pos, initial_distance, action_collision, environment
         )
         
+        # Penalize moving away from goal (but don't penalize STAY/ROTATE)
+        if moving_away_from_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
+                                                       DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
+            mission_success *= 0.3  # 70% penalty for actively moving away from goal
+        
         energy_consumed = self.calculate_energy_consumed(
             new_battery_used, total_battery
         )
@@ -257,20 +288,38 @@ class PayoffFunction:
             new_explored, total_cells
         )
         
-        # Apply weights and compute final payoff
-        payoff = (self.w1 * mission_success - 
-                 self.w2 * energy_consumed - 
-                 self.w3 * effective_collision_risk + 
-                 self.w4 * map_quality)
+        # Apply weights and compute drone payoff
+        drone_payoff = (self.w1 * mission_success - 
+                       self.w2 * energy_consumed - 
+                       self.w3 * effective_collision_risk + 
+                       self.w4 * map_quality)
         
-        return payoff
+        # Scale for more dramatic differences
+        drone_payoff *= self.payoff_scale
+        
+        # Calculate environment payoff (game-theoretic interpretation)
+        # Environment "succeeds" when it creates challenges that the drone handles poorly
+        # Success = high collision risk + obstacles that cause energy waste + preventing goal progress
+        # But environment gets lower payoff if drone still succeeds despite challenges
+        env_success_rate = effective_collision_risk * 0.5 + energy_consumed * 0.3
+        env_challenge_effectiveness = 1.0 - mission_success  # How much did we prevent mission?
+        
+        env_payoff = (self.w1 * env_challenge_effectiveness +  # Prevented mission progress
+                     self.w2 * energy_consumed +                # Caused energy drain
+                     self.w3 * effective_collision_risk -       # Created collision risk
+                     self.w4 * map_quality * 0.5)               # Reduced exploration (lower weight)
+        
+        # Scale environment payoff
+        env_payoff *= self.payoff_scale
+        
+        return (drone_payoff, env_payoff)
     
     def generate_payoff_matrix(self,
                               drone_actions: List[DroneAction],
                               env_conditions: List[EnvironmentCondition],
-                              state_params: Dict) -> np.ndarray:
+                              state_params: Dict) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Generate a complete payoff matrix for all action/condition combinations.
+        Generate complete payoff matrices for all action/condition combinations.
         
         Args:
             drone_actions: List of possible drone actions
@@ -278,16 +327,18 @@ class PayoffFunction:
             state_params: Dictionary containing state information for payoff calculation
             
         Returns:
-            2D numpy array where [i,j] is payoff for drone_actions[i] and env_conditions[j]
+            Tuple of (drone_payoff_matrix, env_payoff_matrix)
+            Each is a 2D numpy array where [i,j] is payoff for drone_actions[i] and env_conditions[j]
         """
         n_actions = len(drone_actions)
         n_conditions = len(env_conditions)
         
-        payoff_matrix = np.zeros((n_actions, n_conditions))
+        drone_matrix = np.zeros((n_actions, n_conditions))
+        env_matrix = np.zeros((n_actions, n_conditions))
         
         for i, action in enumerate(drone_actions):
             for j, condition in enumerate(env_conditions):
-                payoff = self.compute_payoff(
+                drone_payoff, env_payoff = self.compute_payoff(
                     action, condition,
                     state_params.get('current_pos'),
                     state_params.get('goal_pos'),
@@ -300,9 +351,10 @@ class PayoffFunction:
                     state_params.get('collision', False),
                     state_params.get('environment', None)
                 )
-                payoff_matrix[i, j] = payoff
+                drone_matrix[i, j] = drone_payoff
+                env_matrix[i, j] = env_payoff
         
-        return payoff_matrix
+        return drone_matrix, env_matrix
     
     def get_weights(self) -> Dict[str, float]:
         """
