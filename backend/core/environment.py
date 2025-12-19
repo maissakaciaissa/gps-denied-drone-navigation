@@ -108,6 +108,7 @@ class Environment:
         x2, y2 = self.goal_pos
         return np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     
+    
     def manhattan_distance_to_goal(self, position: Tuple[int, int]) -> int:
         """
         Calculate Manhattan distance from a position to the goal.
