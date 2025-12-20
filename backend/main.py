@@ -347,6 +347,171 @@ def test_logger():
     return logger
 
 
+def test_minimax():
+    """Test PART 2: Minimax Algorithm"""
+    print("\n" + "=" * 70)
+    print("TEST: MINIMAX ALGORITHM - Adversarial Decision Making")
+    print("=" * 70)
+    
+    from backend.game_theory.minimax import Minimax
+    from backend.core.drone import Drone
+    
+    # 1. Créer l'environnement
+    print("\n--- Setup ---")
+    env = Environment(width=20, height=20, start_pos=(5, 5), goal_pos=(15, 15))
+    
+    # Ajouter des obstacles pour rendre la décision intéressante
+    obstacles = [
+        (7, 6), (8, 6), (9, 6),  # Mur horizontal devant
+        (7, 7), (7, 8),          # Mur vertical à gauche
+    ]
+    env.add_obstacles(obstacles)
+    print(f"Environment: {env}")
+    print(f"Start: {env.start_pos}, Goal: {env.goal_pos}")
+    print(f"Obstacles: {len(obstacles)} obstacles placés")
+    
+    # 2. Créer le drone
+    drone = Drone(environment=env, battery_capacity=100)
+    print(f"\nDrone créé à position: {drone.get_position()}")
+    print(f"Batterie: {drone.get_battery_percentage():.1f}%")
+    
+    # 3. Créer la fonction de payoff
+    payoff_func = PayoffFunction(w1=0.4, w2=0.2, w3=0.3, w4=0.1)
+    print(f"\nPayoff Function: {payoff_func}")
+    
+    # 4. Créer le solver Minimax
+    minimax_solver = Minimax(payoff=payoff_func)
+    print(f"\nMinimax Solver créé")
+    
+    # 5. Construire les state_params
+    state_params = {
+        'current_pos': drone.get_position(),
+        'goal_pos': env.goal_pos,
+        'initial_distance': env.distance_to_goal(env.start_pos),
+        'battery_used': drone.battery_capacity - drone.get_battery_level(),
+        'total_battery': drone.battery_capacity,
+        'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone.get_position()),
+        'explored_cells': len(drone.explored_cells),
+        'total_cells': env.width * env.height,
+        'collision': False,
+        'environment': env
+    }
+    
+    print("\n--- State Parameters ---")
+    print(f"Position: {state_params['current_pos']}")
+    print(f"Goal: {state_params['goal_pos']}")
+    print(f"Distance to goal: {env.distance_to_goal(state_params['current_pos']):.2f}")
+    print(f"Distance to nearest obstacle: {state_params['distance_to_nearest_obstacle']:.2f}")
+    print(f"Battery used: {state_params['battery_used']}/{state_params['total_battery']}")
+    
+    # 6. Test 1: evaluate_action() pour une seule action
+    print("\n" + "-" * 70)
+    print("TEST 1: evaluate_action() - Évaluer une seule action")
+    print("-" * 70)
+    
+    test_action = DroneAction.MOVE_UP
+    worst_payoff, worst_condition = minimax_solver.evaluate_action(test_action, state_params)
+    
+    print(f"\nAction testée: {test_action.value}")
+    print(f"Pire cas payoff: {worst_payoff:.2f}")
+    print(f"Pire condition: {worst_condition.value}")
+    
+    # 7. Test 2: get_worst_case_payoff()
+    print("\n" + "-" * 70)
+    print("TEST 2: get_worst_case_payoff() - Version simplifiée")
+    print("-" * 70)
+    
+    worst_only = minimax_solver.get_worst_case_payoff(test_action, state_params)
+    print(f"\nAction: {test_action.value}")
+    print(f"Pire cas payoff: {worst_only:.2f}")
+    
+    # 8. Test 3: minimax_decision() avec toutes les actions
+    print("\n" + "-" * 70)
+    print("TEST 3: minimax_decision() - Choisir la meilleure action")
+    print("-" * 70)
+    
+    # Obtenir les actions valides du drone
+    valid_actions = drone.get_valid_actions()
+    print(f"\nActions valides: {[a.value for a in valid_actions]}")
+    
+    # Appeler minimax_decision avec verbose=True
+    best_action, best_worst_case, analysis = minimax_solver.minimax_decision(
+        valid_actions, state_params, verbose=True
+    )
+    
+    print(f"\n✅ Décision finale: {best_action.value}")
+    print(f"✅ Payoff garanti: {best_worst_case:.2f}")
+    
+    # 9. Test 4: solve() - Interface simple
+    print("\n" + "-" * 70)
+    print("TEST 4: solve() - Interface simplifiée")
+    print("-" * 70)
+    
+    chosen_action = minimax_solver.solve(valid_actions, state_params, verbose=False)
+    print(f"\nAction choisie par solve(): {chosen_action.value}")
+    
+    # 10. Test 5: Navigation multi-étapes avec Minimax
+    print("\n" + "-" * 70)
+    print("TEST 5: Navigation Multi-Étapes avec Minimax")
+    print("-" * 70)
+    
+    # Réinitialiser le drone
+    drone2 = Drone(environment=env, battery_capacity=100)
+    max_steps = 5
+    
+    print(f"\nNavigation de {max_steps} étapes avec Minimax")
+    print(f"Position initiale: {drone2.get_position()}")
+    print(f"Objectif: {env.goal_pos}\n")
+    
+    for step in range(max_steps):
+        # Construire state_params
+        state_params = {
+            'current_pos': drone2.get_position(),
+            'goal_pos': env.goal_pos,
+            'initial_distance': env.distance_to_goal(env.start_pos),
+            'battery_used': drone2.battery_capacity - drone2.get_battery_level(),
+            'total_battery': drone2.battery_capacity,
+            'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone2.get_position()),
+            'explored_cells': len(drone2.explored_cells),
+            'total_cells': env.width * env.height,
+            'collision': False,
+            'environment': env
+        }
+        
+        # Obtenir actions valides
+        valid_actions = drone2.get_valid_actions()
+        
+        if not valid_actions:
+            print("❌ Aucune action valide disponible!")
+            break
+        
+        # Minimax choisit l'action
+        action = minimax_solver.solve(valid_actions, state_params, verbose=False)
+        
+        # Exécuter l'action
+        success = drone2.move(action)
+        
+        # Afficher
+        distance_to_goal = env.distance_to_goal(drone2.get_position())
+        print(f"Étape {step+1}: {action.value:15s} → {drone2.get_position()} | "
+              f"Batterie: {drone2.get_battery_percentage():5.1f}% | "
+              f"Distance: {distance_to_goal:5.2f}")
+        
+        # Vérifier si objectif atteint
+        if env.is_goal_reached(drone2.get_position()):
+            print(f"\n🎯 Objectif atteint en {step+1} étapes!")
+            break
+    
+    print(f"\nPosition finale: {drone2.get_position()}")
+    print(f"Distance finale à l'objectif: {env.distance_to_goal(drone2.get_position()):.2f}")
+    print(f"Batterie restante: {drone2.get_battery_percentage():.1f}%")
+    print(f"Cellules explorées: {len(drone2.explored_cells)}")
+    
+    print("\n" + "=" * 70)
+    print("✅ TESTS MINIMAX TERMINÉS")
+    print("=" * 70)
+
+"""
 def main():
     print("\n")
     print("=" * 70)
@@ -397,6 +562,28 @@ def main():
     
     # Test logger
     test_logger()
+    test_minimax()
+
+"""
+
+def main():
+    print("\n")
+    print("=" * 70)
+    print(" DRONE VISUAL NAVIGATION PROJECT - TESTS")
+    print("=" * 70)
+    
+    # Commentez les tests que vous ne voulez pas exécuter
+    # env = test_environment()
+    # drone_strategy, env_strategy = test_strategies()
+    # payoff_func = test_payoff_function()
+    # test_logger()
+    
+    # Test Minimax uniquement
+    test_minimax()
+    
+    print("\n" + "=" * 70)
+    print(" TOUS LES TESTS TERMINÉS")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
