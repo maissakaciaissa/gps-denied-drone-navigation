@@ -511,6 +511,206 @@ def test_minimax():
     print("✅ TESTS MINIMAX TERMINÉS")
     print("=" * 70)
 
+
+def test_nash():
+    """Test PART 3: Nash Equilibrium Algorithm"""
+    print("\n" + "=" * 70)
+    print("TEST: NASH EQUILIBRIUM ALGORITHM - Strategic Decision Making")
+    print("=" * 70)
+    
+    from backend.game_theory.nash import NashEquilibriumSolver
+    from backend.core.drone import Drone
+    
+    # 1. Créer l'environnement
+    print("\n--- Setup ---")
+    env = Environment(width=20, height=20, start_pos=(5, 5), goal_pos=(15, 15))
+    
+    # Ajouter des obstacles pour rendre la décision intéressante
+    obstacles = [
+        (7, 6), (8, 6), (9, 6),  # Mur horizontal devant
+        (7, 7), (7, 8),          # Mur vertical à gauche
+    ]
+    env.add_obstacles(obstacles)
+    print(f"Environment: {env}")
+    print(f"Start: {env.start_pos}, Goal: {env.goal_pos}")
+    print(f"Obstacles: {len(obstacles)} obstacles placés")
+    
+    # 2. Créer le drone
+    drone = Drone(environment=env, battery_capacity=100)
+    print(f"\nDrone créé à position: {drone.get_position()}")
+    print(f"Batterie: {drone.get_battery_percentage():.1f}%")
+    
+    # 3. Créer la fonction de payoff
+    payoff_func = PayoffFunction(w1=0.4, w2=0.2, w3=0.3, w4=0.1)
+    print(f"\nPayoff Function: {payoff_func}")
+    
+    # 4. Créer le solver Nash
+    nash_solver = NashEquilibriumSolver(payoff_func)
+    print(f"\nNash Equilibrium Solver créé")
+    
+    # 5. Construire les state_params
+    state_params = {
+        'current_pos': drone.get_position(),
+        'goal_pos': env.goal_pos,
+        'initial_distance': env.distance_to_goal(env.start_pos),
+        'battery_used': drone.battery_capacity - drone.get_battery_level(),
+        'total_battery': drone.battery_capacity,
+        'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone.get_position()),
+        'explored_cells': len(drone.explored_cells),
+        'total_cells': env.width * env.height,
+        'collision': False,
+        'environment': env
+    }
+    
+    print("\n--- State Parameters ---")
+    print(f"Position: {state_params['current_pos']}")
+    print(f"Goal: {state_params['goal_pos']}")
+    print(f"Distance to goal: {env.distance_to_goal(state_params['current_pos']):.2f}")
+    print(f"Distance to nearest obstacle: {state_params['distance_to_nearest_obstacle']:.2f}")
+    print(f"Battery used: {state_params['battery_used']}/{state_params['total_battery']}")
+    
+    # 6. Test 1: find_nash_equilibrium() pour un sous-ensemble d'actions
+    print("\n" + "-" * 70)
+    print("TEST 1: find_nash_equilibrium() - Trouver l'équilibre Nash")
+    print("-" * 70)
+    
+    # Utiliser un petit sous-ensemble pour la démonstration
+    test_drone_actions = [DroneAction.MOVE_UP, DroneAction.MOVE_RIGHT, DroneAction.STAY]
+    test_env_conditions = [EnvironmentCondition.CLEAR_PATH, EnvironmentCondition.OBSTACLE_AHEAD]
+    
+    print(f"\nActions testées: {[a.value for a in test_drone_actions]}")
+    print(f"Conditions testées: {[c.value for c in test_env_conditions]}")
+    
+    # Générer les matrices de payoff
+    drone_matrix, env_matrix = payoff_func.generate_payoff_matrix(
+        test_drone_actions, test_env_conditions, state_params
+    )
+    
+    print(f"\nMatrice de payoff Drone:")
+    print(drone_matrix)
+    print(f"\nMatrice de payoff Environnement:")
+    print(env_matrix)
+    
+    # Trouver l'équilibre Nash
+    nash_drone, nash_env = nash_solver.find_nash_equilibrium(
+        drone_matrix, env_matrix, test_drone_actions, test_env_conditions
+    )
+    
+    print(f"\n✅ Équilibre de Nash trouvé:")
+    print(f"\nStratégie Drone (Nash):")
+    for action, prob in zip(nash_drone.strategies, nash_drone.probabilities):
+        print(f"  {action.value:20s}: {prob:6.2%}")
+    
+    print(f"\nStratégie Environnement (Nash):")
+    for condition, prob in zip(nash_env.strategies, nash_env.probabilities):
+        print(f"  {condition.value:20s}: {prob:6.2%}")
+    
+    # 7. Test 2: calculate_expected_payoff()
+    print("\n" + "-" * 70)
+    print("TEST 2: calculate_expected_payoff() - Calculer le payoff espéré")
+    print("-" * 70)
+    
+    expected_payoff = nash_solver.calculate_expected_payoff(nash_drone, nash_env, drone_matrix)
+    print(f"\nPayoff espéré à l'équilibre Nash: {expected_payoff:.2f}")
+    
+    # 8. Test 3: _verify_nash() - Vérification
+    print("\n" + "-" * 70)
+    print("TEST 3: _verify_nash() - Vérifier l'équilibre")
+    print("-" * 70)
+    
+    is_nash = nash_solver._verify_nash(
+        np.array(nash_drone.probabilities), np.array(nash_env.probabilities),
+        drone_matrix, env_matrix
+    )
+    print(f"\n✅ Vérification: Est-ce un équilibre de Nash? {is_nash}")
+    
+    if is_nash:
+        print("  - Condition d'indifférence satisfaite")
+        print("  - Aucune déviation profitable pour aucun joueur")
+    
+    # 9. Test 4: solve() - Interface simple
+    print("\n" + "-" * 70)
+    print("TEST 4: solve() - Interface simplifiée")
+    print("-" * 70)
+    
+    # Obtenir les actions valides du drone
+    valid_actions = drone.get_valid_actions()
+    print(f"\nActions valides: {[a.value for a in valid_actions]}")
+    
+    chosen_action = nash_solver.solve(state_params)
+    print(f"\nAction choisie par solve(): {chosen_action.value}")
+    
+    # Afficher les stratégies Nash complètes
+    full_nash_drone, full_nash_env = nash_solver.get_nash_strategies()
+    if full_nash_drone and full_nash_env:
+        print(f"\n✅ Stratégies Nash complètes:")
+        print(f"\nDrone (top 3 actions):")
+        probs = list(zip(full_nash_drone.strategies, full_nash_drone.probabilities))
+        probs.sort(key=lambda x: x[1], reverse=True)
+        for action, prob in probs[:3]:
+            print(f"  {action.value:20s}: {prob:6.2%}")
+        
+        print(f"\nEnvironnement (top 3 conditions):")
+        env_probs = list(zip(full_nash_env.strategies, full_nash_env.probabilities))
+        env_probs.sort(key=lambda x: x[1], reverse=True)
+        for condition, prob in env_probs[:3]:
+            print(f"  {condition.value:20s}: {prob:6.2%}")
+    
+    # 10. Test 5: Navigation multi-étapes avec Nash Equilibrium
+    print("\n" + "-" * 70)
+    print("TEST 5: Navigation Multi-Étapes avec Nash Equilibrium")
+    print("-" * 70)
+    
+    # Réinitialiser le drone
+    drone2 = Drone(environment=env, battery_capacity=100)
+    max_steps = 5
+    
+    print(f"\nNavigation de {max_steps} étapes avec Nash Equilibrium")
+    print(f"Position initiale: {drone2.get_position()}")
+    print(f"Objectif: {env.goal_pos}\n")
+    
+    for step in range(max_steps):
+        # Construire state_params
+        state_params = {
+            'current_pos': drone2.get_position(),
+            'goal_pos': env.goal_pos,
+            'initial_distance': env.distance_to_goal(env.start_pos),
+            'battery_used': drone2.battery_capacity - drone2.get_battery_level(),
+            'total_battery': drone2.battery_capacity,
+            'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone2.get_position()),
+            'explored_cells': len(drone2.explored_cells),
+            'total_cells': env.width * env.height,
+            'collision': False,
+            'environment': env
+        }
+        
+        # Nash choisit l'action
+        action = nash_solver.solve(state_params)
+        
+        # Exécuter l'action
+        success = drone2.move(action)
+        
+        # Afficher
+        distance_to_goal = env.distance_to_goal(drone2.get_position())
+        print(f"Étape {step+1}: {action.value:15s} → {drone2.get_position()} | "
+              f"Batterie: {drone2.get_battery_percentage():5.1f}% | "
+              f"Distance: {distance_to_goal:5.2f}")
+        
+        # Vérifier si objectif atteint
+        if env.is_goal_reached(drone2.get_position()):
+            print(f"\n🎯 Objectif atteint en {step+1} étapes!")
+            break
+    
+    print(f"\nPosition finale: {drone2.get_position()}")
+    print(f"Distance finale à l'objectif: {env.distance_to_goal(drone2.get_position()):.2f}")
+    print(f"Batterie restante: {drone2.get_battery_percentage():.1f}%")
+    print(f"Cellules explorées: {len(drone2.explored_cells)}")
+    
+    print("\n" + "=" * 70)
+    print("✅ TESTS NASH EQUILIBRIUM TERMINÉS")
+    print("=" * 70)
+
+
 """
 def main():
     print("\n")
@@ -579,7 +779,10 @@ def main():
     # test_logger()
     
     # Test Minimax uniquement
-    test_minimax()
+    # test_minimax()
+
+    # Test Nash
+    test_nash()
     
     print("\n" + "=" * 70)
     print(" TOUS LES TESTS TERMINÉS")
