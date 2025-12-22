@@ -711,6 +711,224 @@ def test_nash():
     print("=" * 70)
 
 
+def test_bayesian():
+    """Test PART 4: Bayesian Game Solver"""
+    print("\n" + "=" * 70)
+    print("TEST: BAYESIAN GAME SOLVER - Decision Making Under Uncertainty")
+    print("=" * 70)
+    
+    from backend.game_theory.bayesian import BayesianGameSolver
+    from backend.core.drone import Drone
+    
+    # 1. Créer l'environnement
+    print("\n--- Setup ---")
+    env = Environment(width=20, height=20, start_pos=(5, 5), goal_pos=(15, 15))
+    
+    # Ajouter des obstacles pour un environnement incertain
+    obstacles = [
+        (7, 6), (8, 6), (9, 6),  # Mur horizontal devant
+        (7, 7), (7, 8),          # Mur vertical à gauche
+        (12, 10), (12, 11),      # Obstacles dispersés
+    ]
+    env.add_obstacles(obstacles)
+    print(f"Environment: {env}")
+    print(f"Start: {env.start_pos}, Goal: {env.goal_pos}")
+    print(f"Obstacles: {len(obstacles)} obstacles placés")
+    
+    # 2. Créer le drone
+    drone = Drone(environment=env, battery_capacity=100)
+    print(f"\nDrone créé à position: {drone.get_position()}")
+    print(f"Batterie: {drone.get_battery_percentage():.1f}%")
+    
+    # 3. Créer la fonction de payoff
+    payoff_func = PayoffFunction(w1=0.4, w2=0.2, w3=0.3, w4=0.1)
+    print(f"\nPayoff Function: {payoff_func}")
+    
+    # 4. Créer le solver Bayesian
+    bayesian_solver = BayesianGameSolver(payoff_func)
+    print(f"\nBayesian Solver créé")
+    
+    # 5. Initialiser les croyances (priors)
+    print("\n--- Belief Initialization ---")
+    beliefs = bayesian_solver.initialize_beliefs(
+        prior_adversarial=0.4,
+        prior_neutral=0.4,
+        prior_favorable=0.2
+    )
+    print("Croyances initiales:")
+    for env_type, prob in beliefs.items():
+        print(f"  {env_type:15s}: {prob:6.2%}")
+    
+    # 6. Construire les state_params
+    state_params = {
+        'current_pos': drone.get_position(),
+        'goal_pos': env.goal_pos,
+        'initial_distance': env.distance_to_goal(env.start_pos),
+        'battery_used': drone.battery_capacity - drone.get_battery_level(),
+        'total_battery': drone.battery_capacity,
+        'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone.get_position()),
+        'explored_cells': len(drone.explored_cells),
+        'total_cells': env.width * env.height,
+        'collision': False,
+        'environment': env
+    }
+    
+    # 7. Test 1: Expected Utility Calculation
+    print("\n" + "-" * 70)
+    print("TEST 1: Expected Utility Calculation")
+    print("-" * 70)
+    
+    print("\nUtilités espérées pour chaque action:")
+    for action in [DroneAction.MOVE_UP, DroneAction.MOVE_RIGHT, DroneAction.STAY]:
+        expected_util = bayesian_solver.expected_utility(action, state_params)
+        print(f"  {action.value:15s}: {expected_util:7.2f}")
+    
+    # 8. Test 2: Bayesian Decision (verbose)
+    print("\n" + "-" * 70)
+    print("TEST 2: Bayesian Decision Making")
+    print("-" * 70)
+    
+    available_actions = [DroneAction.MOVE_UP, DroneAction.MOVE_RIGHT, DroneAction.STAY]
+    best_action, best_utility, analysis = bayesian_solver.bayesian_decision(
+        available_actions, state_params, verbose=True
+    )
+    
+    # 9. Test 3: Belief Update
+    print("\n" + "-" * 70)
+    print("TEST 3: Belief Update (Bayesian Learning)")
+    print("-" * 70)
+    
+    # Simuler l'observation d'un obstacle
+    print("\nSimulation: Le drone observe un OBSTACLE_AHEAD")
+    updated_beliefs = bayesian_solver.update_beliefs(
+        best_action,
+        EnvironmentCondition.OBSTACLE_AHEAD,
+        25.0
+    )
+    
+    print("\nCroyances mises à jour:")
+    for env_type, prob in updated_beliefs.items():
+        print(f"  {env_type:15s}: {prob:6.2%}")
+    print(f"\nNombre d'observations: {bayesian_solver.get_observation_count()}")
+    
+    # 10. Test 4: Solve Method
+    print("\n" + "-" * 70)
+    print("TEST 4: solve() Method")
+    print("-" * 70)
+    
+    action = bayesian_solver.solve(list(DroneAction), state_params, verbose=False)
+    print(f"\nAction recommandée: {action.value}")
+    print(f"Croyances actuelles: {bayesian_solver.get_beliefs()}")
+    
+    # 11. Test 5: Learning Over Multiple Observations
+    print("\n" + "-" * 70)
+    print("TEST 5: Learning Over Multiple Observations")
+    print("-" * 70)
+    
+    # Réinitialiser avec croyances uniformes
+    bayesian_solver.reset()
+    bayesian_solver.initialize_beliefs(0.33, 0.34, 0.33)
+    
+    print("\nCroyances initiales (uniformes):")
+    for env_type, prob in bayesian_solver.get_beliefs().items():
+        print(f"  {env_type:15s}: {prob:6.2%}")
+    
+    # Simuler 5 observations d'obstacles (preuve d'adversarial)
+    print("\nSimulation: 5 observations d'obstacles...")
+    for i in range(5):
+        bayesian_solver.update_beliefs(
+            DroneAction.MOVE_UP,
+            EnvironmentCondition.OBSTACLE_AHEAD,
+            30.0
+        )
+    
+    print("\nCroyances après 5 obstacles:")
+    for env_type, prob in bayesian_solver.get_beliefs().items():
+        print(f"  {env_type:15s}: {prob:6.2%}")
+    
+    # Maintenant 10 observations de CLEAR_PATH (preuve de favorable)
+    print("\nSimulation: 10 observations de chemins clairs...")
+    for i in range(10):
+        bayesian_solver.update_beliefs(
+            DroneAction.MOVE_UP,
+            EnvironmentCondition.CLEAR_PATH,
+            85.0
+        )
+    
+    print("\nCroyances après 10 chemins clairs:")
+    for env_type, prob in bayesian_solver.get_beliefs().items():
+        print(f"  {env_type:15s}: {prob:6.2%}")
+    print(f"\nTotal observations: {bayesian_solver.get_observation_count()}")
+    
+    # 12. Test 6: Navigation Multi-Étapes avec Bayesian
+    print("\n" + "-" * 70)
+    print("TEST 6: Navigation Multi-Étapes avec Bayesian Learning")
+    print("-" * 70)
+    
+    # Réinitialiser pour navigation
+    bayesian_solver.reset()
+    bayesian_solver.initialize_beliefs(0.3, 0.5, 0.2)
+    
+    drone2 = Drone(environment=env, battery_capacity=100)
+    max_steps = 5
+    
+    print(f"\nNavigation de {max_steps} étapes avec Bayesian")
+    print(f"Position initiale: {drone2.get_position()}")
+    print(f"Objectif: {env.goal_pos}\n")
+    
+    for step in range(max_steps):
+        # Construire state_params
+        state_params = {
+            'current_pos': drone2.get_position(),
+            'goal_pos': env.goal_pos,
+            'initial_distance': env.distance_to_goal(env.start_pos),
+            'battery_used': drone2.battery_capacity - drone2.get_battery_level(),
+            'total_battery': drone2.battery_capacity,
+            'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone2.get_position()),
+            'explored_cells': len(drone2.explored_cells),
+            'total_cells': env.width * env.height,
+            'collision': False,
+            'environment': env
+        }
+        
+        # Bayesian choisit l'action
+        action = bayesian_solver.solve(list(DroneAction), state_params)
+        
+        # Simuler une observation (ici on sample une condition)
+        observed_condition = EnvironmentCondition.CLEAR_PATH  # Simplified
+        
+        # Mettre à jour les croyances
+        bayesian_solver.update_beliefs(action, observed_condition, 70.0)
+        
+        # Exécuter l'action
+        success = drone2.move(action)
+        
+        # Afficher
+        distance_to_goal = env.distance_to_goal(drone2.get_position())
+        beliefs = bayesian_solver.get_beliefs()
+        print(f"Étape {step+1}: {action.value:15s} → {drone2.get_position()} | "
+              f"Batterie: {drone2.get_battery_percentage():5.1f}% | "
+              f"Distance: {distance_to_goal:5.2f} | "
+              f"Beliefs: Adv={beliefs['adversarial']:.1%}")
+        
+        # Vérifier si objectif atteint
+        if env.is_goal_reached(drone2.get_position()):
+            print(f"\n🎯 Objectif atteint en {step+1} étapes!")
+            break
+    
+    print(f"\nPosition finale: {drone2.get_position()}")
+    print(f"Distance finale à l'objectif: {env.distance_to_goal(drone2.get_position()):.2f}")
+    print(f"Batterie restante: {drone2.get_battery_percentage():.1f}%")
+    print(f"Cellules explorées: {len(drone2.explored_cells)}")
+    print(f"Croyances finales:")
+    for env_type, prob in bayesian_solver.get_beliefs().items():
+        print(f"  {env_type:15s}: {prob:6.2%}")
+    
+    print("\n" + "=" * 70)
+    print("✅ TESTS BAYESIAN SOLVER TERMINÉS")
+    print("=" * 70)
+
+
 """
 def main():
     print("\n")
@@ -782,7 +1000,10 @@ def main():
     # test_minimax()
 
     # Test Nash
-    test_nash()
+    # test_nash()
+    
+    # Test Bayesian
+    test_bayesian()
     
     print("\n" + "=" * 70)
     print(" TOUS LES TESTS TERMINÉS")
