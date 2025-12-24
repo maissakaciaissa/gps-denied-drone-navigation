@@ -182,6 +182,74 @@ class DroneSensor:
         
         return observable_cells
     
+    def sense_environment_condition(self, environment: Environment, drone_position: Tuple[int, int]) -> EnvironmentCondition:
+        """
+        Determine the current environment condition based on sensor readings.
+        
+        The sensor detects obstacles and determines conditions based on:
+        - Proximity to obstacles
+        - Visibility and sensor noise
+        - Environmental factors
+        
+        Args:
+            environment: The Environment object to sense
+            drone_position: Current (x, y) position of the drone
+        
+        Returns:
+            EnvironmentCondition enum value
+        """
+        import random
+        
+        # Detect obstacles in all directions
+        obstacles_by_direction = self.detect_obstacles(environment, drone_position)
+        
+        # Check if there's an obstacle immediately ahead (within 2 cells in any direction)
+        close_obstacles = [dist for dist in obstacles_by_direction.values() if dist is not None and dist <= 2]
+        
+        if close_obstacles:
+            # Obstacle is very close - primary concern
+            return EnvironmentCondition.OBSTACLE_AHEAD
+        
+        # Get visible obstacles in sensor range
+        visible_obstacles = self.scan_environment(environment, drone_position)
+        
+        # Introduce some randomness to simulate real-world sensor variability
+        # with weighted probabilities based on environment state
+        rand_val = random.random()
+        
+        if len(visible_obstacles) > 3:
+            # Many obstacles visible - more likely to have sensor noise or visibility issues
+            if rand_val < 0.3:
+                return EnvironmentCondition.SENSOR_NOISE
+            elif rand_val < 0.5:
+                return EnvironmentCondition.LOW_VISIBILITY
+            elif rand_val < 0.7:
+                return EnvironmentCondition.LIGHTING_CHANGE
+            else:
+                return EnvironmentCondition.CLEAR_PATH
+        
+        elif len(visible_obstacles) > 0:
+            # Some obstacles visible - moderate conditions
+            if rand_val < 0.2:
+                return EnvironmentCondition.SENSOR_NOISE
+            elif rand_val < 0.3:
+                return EnvironmentCondition.LOW_VISIBILITY
+            elif rand_val < 0.4:
+                return EnvironmentCondition.LIGHTING_CHANGE
+            else:
+                return EnvironmentCondition.CLEAR_PATH
+        
+        else:
+            # No obstacles nearby - mostly clear conditions
+            if rand_val < 0.1:
+                return EnvironmentCondition.SENSOR_NOISE
+            elif rand_val < 0.15:
+                return EnvironmentCondition.LOW_VISIBILITY
+            elif rand_val < 0.2:
+                return EnvironmentCondition.LIGHTING_CHANGE
+            else:
+                return EnvironmentCondition.CLEAR_PATH
+    
     def get_sensor_info(self) -> Dict:
         """
         Get current sensor state information.

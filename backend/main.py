@@ -929,6 +929,354 @@ def test_bayesian():
     print("=" * 70)
 
 
+def test_sensor():
+    """Test PART 4: Drone Sensor - Environment Perception"""
+    print("\n" + "=" * 70)
+    print("TEST: DRONE SENSOR - Vision and Environment Perception")
+    print("=" * 70)
+    
+    from backend.core.sensor import DroneSensor
+    from backend.core.drone import Drone
+    
+    # 1. Create environment with obstacles
+    print("\n--- Setup ---")
+    env = Environment(width=20, height=20, start_pos=(10, 10), goal_pos=(15, 15))
+    
+    # Add obstacles around drone position
+    obstacles = [
+        (11, 10), (12, 10), (13, 10),  # Right side
+        (10, 11), (10, 12),             # Below
+        (9, 9), (8, 9)                  # Upper left
+    ]
+    env.add_obstacles(obstacles)
+    print(f"Environment: {env}")
+    print(f"Obstacles placed: {len(obstacles)}")
+    
+    # 2. Create drone and sensor
+    drone = Drone(environment=env, battery_capacity=100)
+    sensor = DroneSensor(detection_range=5)
+    
+    print(f"\nDrone position: {drone.get_position()}")
+    print(f"Sensor detection range: {sensor.detection_range}")
+    
+    # 3. Test 1: detect_obstacles()
+    print("\n" + "-" * 70)
+    print("TEST 1: detect_obstacles() - Directional Obstacle Detection")
+    print("-" * 70)
+    
+    detected = sensor.detect_obstacles(env, drone.get_position())
+    print(f"\nObstacle detection from {drone.get_position()}:")
+    for direction, distance in detected.items():
+        if distance is not None:
+            print(f"  {direction:6s}: Obstacle at {distance} cells away")
+        else:
+            print(f"  {direction:6s}: Clear (no obstacles within range)")
+    
+    # 4. Test 2: scan_environment()
+    print("\n" + "-" * 70)
+    print("TEST 2: scan_environment() - Full Environment Scan")
+    print("-" * 70)
+    
+    visible_obstacles = sensor.scan_environment(env, drone.get_position())
+    print(f"\nVisible obstacles from {drone.get_position()}:")
+    print(f"  Total visible: {len(visible_obstacles)} obstacles")
+    for obs_pos in visible_obstacles[:5]:  # Show first 5
+        distance = np.sqrt((obs_pos[0] - drone.get_position()[0])**2 + 
+                          (obs_pos[1] - drone.get_position()[1])**2)
+        print(f"    Position: {obs_pos}, Distance: {distance:.2f}")
+    if len(visible_obstacles) > 5:
+        print(f"    ... and {len(visible_obstacles) - 5} more")
+    
+    # 5. Test 3: sense_environment_condition()
+    print("\n" + "-" * 70)
+    print("TEST 3: sense_environment_condition() - High-level Perception")
+    print("-" * 70)
+    
+    condition = sensor.sense_environment_condition(env, drone.get_position())
+    print(f"\nEnvironment condition detected: {condition.value}")
+    
+    # 6. Test 4: Sensor Info and Visibility
+    print("\n" + "-" * 70)
+    print("TEST 4: Sensor Information and Status")
+    print("-" * 70)
+    
+    sensor_info = sensor.get_sensor_info()
+    print(f"\nSensor Information:")
+    for key, value in sensor_info.items():
+        print(f"  {key}: {value}")
+    
+    print(f"\nSensor representation: {sensor}")
+    
+    # 7. Test 5: Multiple positions
+    print("\n" + "-" * 70)
+    print("TEST 5: Sensor Performance at Multiple Positions")
+    print("-" * 70)
+    
+    test_positions = [(10, 10), (5, 5), (15, 15), (1, 1)]
+    print("\nTesting sensor at different positions:")
+    for pos in test_positions:
+        if env.is_valid_position(pos):
+            visible = sensor.scan_environment(env, pos)
+            condition = sensor.sense_environment_condition(env, pos)
+            detected_dirs = sensor.detect_obstacles(env, pos)
+            blocked_dirs = sum(1 for d in detected_dirs.values() if d is not None)
+            print(f"  Position {pos}: {len(visible)} visible obstacles, "
+                  f"{blocked_dirs} blocked directions, Condition: {condition.value}")
+    
+    print("\n" + "=" * 70)
+    print("✅ TESTS SENSOR TERMINÉS")
+    print("=" * 70)
+
+
+def test_engine():
+    """Test PART 4: Simulation Engine - Comprehensive Testing"""
+    print("\n" + "=" * 70)
+    print("TEST: SIMULATION ENGINE - Drone Navigation Simulation")
+    print("=" * 70)
+    
+    from backend.simulation.engine import SimulationEngine
+    from backend.core.drone import Drone
+    
+    # Setup
+    print("\n--- Setup ---")
+    env = Environment(width=15, height=15, start_pos=(2, 2), goal_pos=(12, 12))
+    obstacles = [(7, 7), (8, 7), (7, 8), (9, 9), (10, 5)]
+    env.add_obstacles(obstacles)
+    print(f"Environment: {env}")
+    print(f"Obstacles: {len(obstacles)}")
+    
+    drone = Drone(environment=env, battery_capacity=150)
+    payoff_func = PayoffFunction()
+    
+    engine = SimulationEngine(env, drone, payoff_func)
+    print(f"\nEngine initialized: {engine}")
+    
+    # TEST 1: Run simulation with different algorithms
+    print("\n" + "-" * 70)
+    print("TEST 1: Algorithm Comparison")
+    print("-" * 70)
+    
+    algorithms = ['minimax', 'nash', 'bayesian']
+    results_summary = []
+    
+    for algo in algorithms:
+        engine.reset()
+        result = engine.run_simulation(max_steps=50, algorithm=algo, verbose=False)
+        results_summary.append((algo, result))
+        print(f"\n{algo.upper()} Results:")
+        print(f"  Success: {result['success']}")
+        print(f"  Steps: {result['path_length']}")
+        print(f"  Battery: {result['battery_used_percent']:.1f}%")
+        print(f"  Collisions: {result['collisions']}")
+    
+    # TEST 2: Detailed results analysis
+    print("\n" + "-" * 70)
+    print("TEST 2: Detailed Results Analysis")
+    print("-" * 70)
+    
+    # Use Nash (best performer) for detailed analysis
+    engine.reset()
+    result = engine.run_simulation(max_steps=50, algorithm='nash', verbose=False)
+    
+    print(f"\nDetailed Nash Results:")
+    print(f"  Success: {result.get('success', False)}")
+    print(f"  Path Length: {result.get('path_length', 0)} steps")
+    print(f"  Battery Used: {result.get('battery_used_percent', 0):.1f}%")
+    print(f"  Collisions: {result.get('collisions', 0)}")
+    print(f"  Cells Explored: {result.get('cells_explored', 0)}")
+    print(f"  Exploration Rate: {result.get('exploration_rate', 0):.1%}")
+    print(f"  Path Efficiency: {result.get('path_efficiency', 0):.2f}")
+    print(f"  Computation Time: {result.get('computation_time', 0):.3f}s")
+    print(f"  Final Distance to Goal: {result.get('final_distance_to_goal', 0):.2f}")
+    
+    # TEST 3: Engine state and configuration
+    print("\n" + "-" * 70)
+    print("TEST 3: Engine State & Configuration")
+    print("-" * 70)
+    
+    print(f"\nEngine Configuration:")
+    print(f"  Algorithm: {engine.algorithm_mode}")
+    print(f"  Step Counter: {engine.step_counter}")
+    print(f"  Drone Position: {engine.drone.position}")
+    print(f"  Drone Battery: {engine.drone.get_battery_percentage():.1f}%")
+    print(f"  Environment Size: {engine.environment.width}x{engine.environment.height}")
+    print(f"  Goal Position: {engine.environment.goal_pos}")
+    
+    # TEST 4: Multiple runs with reset
+    print("\n" + "-" * 70)
+    print("TEST 4: Multiple Runs with Reset")
+    print("-" * 70)
+    
+    print(f"\nRunning 3 consecutive simulations with Nash:")
+    for i in range(3):
+        engine.reset()
+        result = engine.run_simulation(max_steps=50, algorithm='nash', verbose=False)
+        print(f"  Run {i+1}: Steps={result['path_length']:3d}, "
+              f"Battery={result['battery_used_percent']:5.1f}%, "
+              f"Success={result['success']}")
+    
+    # TEST 5: Path tracking
+    print("\n" + "-" * 70)
+    print("TEST 5: Path Tracking")
+    print("-" * 70)
+    
+    engine.reset()
+    result = engine.run_simulation(max_steps=30, algorithm='nash', verbose=False)
+    path = engine.drone.path  # Get path from drone object
+    
+    print(f"\nPath taken ({len(path)} positions):")
+    print(f"  Start: {path[0] if path else 'N/A'}")
+    if len(path) > 5:
+        print(f"  Intermediate: {path[1]} -> {path[len(path)//2]} -> {path[-2]}")
+    print(f"  End: {path[-1] if path else 'N/A'}")
+    print(f"  Goal: {env.goal_pos}")
+    print(f"  Goal Reached: {result['success']}")
+    print(f"  Total positions visited: {len(path)}")
+    
+    print("\n" + "=" * 70)
+    print("✅ SIMULATION ENGINE TESTS COMPLETE")
+    print("=" * 70)
+
+
+def test_compare():
+    """Test PART 4: Algorithm Comparator - Multi-algorithm Performance Analysis"""
+    print("\n" + "=" * 70)
+    print("TEST: ALGORITHM COMPARATOR - Performance Comparison")
+    print("=" * 70)
+    
+    from backend.evaluation.compare import AlgorithmComparator
+    from backend.core.drone import Drone
+    
+    # Setup
+    print("\n--- Setup ---")
+    env = Environment(width=15, height=15, start_pos=(2, 2), goal_pos=(12, 12))
+    obstacles = [(7, 7), (8, 7), (7, 8), (10, 10), (5, 9)]
+    env.add_obstacles(obstacles)
+    print(f"Environment: {env}")
+    print(f"Obstacles: {len(obstacles)}")
+    
+    drone = Drone(environment=env, battery_capacity=150)
+    payoff_func = PayoffFunction()
+    
+    comparator = AlgorithmComparator(env, drone, payoff_func)
+    print(f"\nAlgorithm Comparator created: {comparator}")
+    
+    # TEST 1: Multi-algorithm comparison
+    print("\n" + "-" * 70)
+    print("TEST 1: Multi-Algorithm Comparison")
+    print("-" * 70)
+    
+    print("\nTesting: Minimax, Nash Equilibrium, Bayesian")
+    print("Trials per algorithm: 3")
+    print("Max steps per trial: 100\n")
+    
+    all_results = comparator.run_all_algorithms(
+        trials=3,
+        max_steps=100,
+        verbose=True
+    )
+    
+    # TEST 2: Results summary by algorithm
+    print("\n" + "-" * 70)
+    print("TEST 2: Results Summary by Algorithm")
+    print("-" * 70)
+    
+    for algo, results in all_results.items():
+        print(f"\n{algo.upper()} Results:")
+        print(f"  Trials completed: {len(results)}")
+        successes = sum(1 for r in results if r.get('success', False))
+        print(f"  Successful: {successes}/{len(results)} ({successes/len(results)*100:.1f}%)")
+        
+        if results:
+            avg_steps = np.mean([r.get('path_length', 0) for r in results])
+            avg_battery = np.mean([r.get('battery_used_percent', 0) for r in results])
+            avg_time = np.mean([r.get('computation_time', 0) for r in results])
+            print(f"  Average steps: {avg_steps:.1f}")
+            print(f"  Average battery used: {avg_battery:.1f}%")
+            print(f"  Average computation time: {avg_time:.3f}s")
+    
+    # TEST 3: Statistical comparison
+    print("\n" + "-" * 70)
+    print("TEST 3: Statistical Comparison")
+    print("-" * 70)
+    
+    comparison = comparator.compare_metrics()
+    
+    print("\nComparison by Algorithm:")
+    for algo, metrics in comparison.items():
+        if isinstance(metrics, dict) and 'success_rate' in metrics:
+            print(f"\n{algo.upper()}:")
+            print(f"  Success Rate: {metrics.get('success_rate', 0):.1%}")
+            
+            if 'path_length' in metrics:
+                pl = metrics['path_length']
+                print(f"  Path Length: {pl.get('mean', 0):.1f} ± {pl.get('std', 0):.1f}")
+            
+            if 'battery_used_percent' in metrics:
+                bat = metrics['battery_used_percent']
+                print(f"  Battery Used: {bat.get('mean', 0):.1f}% ± {bat.get('std', 0):.1f}%")
+            
+            if 'computation_time' in metrics:
+                ct = metrics['computation_time']
+                print(f"  Computation Time: {ct.get('mean', 0):.3f}s ± {ct.get('std', 0):.3f}s")
+    
+    # TEST 4: Detailed comparison report
+    print("\n" + "-" * 70)
+    print("TEST 4: Detailed Comparison Report")
+    print("-" * 70)
+    
+    report = comparator.generate_comparison_report()
+    print(report)
+    
+    # TEST 5: Winner identification
+    print("\n" + "-" * 70)
+    print("TEST 5: Winner Identification")
+    print("-" * 70)
+    
+    # Identify winners manually from comparison
+    print("\nBest Algorithm by Metric:")
+    
+    # Success rate winner
+    success_rates = {}
+    for algo, metrics in comparison.items():
+        if isinstance(metrics, dict) and 'success_rate' in metrics:
+            success_rates[algo] = metrics['success_rate']
+    if success_rates:
+        best_success = max(success_rates, key=success_rates.get)
+        print(f"  Highest Success Rate: {best_success} ({success_rates[best_success]:.1%})")
+    
+    # Shortest path winner
+    path_lengths = {}
+    for algo, metrics in comparison.items():
+        if isinstance(metrics, dict) and 'path_length' in metrics:
+            path_lengths[algo] = metrics['path_length'].get('mean', float('inf'))
+    if path_lengths:
+        best_path = min(path_lengths, key=path_lengths.get)
+        print(f"  Shortest Path: {best_path} ({path_lengths[best_path]:.1f} steps)")
+    
+    # Battery efficiency winner
+    battery_usage = {}
+    for algo, metrics in comparison.items():
+        if isinstance(metrics, dict) and 'battery_used_percent' in metrics:
+            battery_usage[algo] = metrics['battery_used_percent'].get('mean', float('inf'))
+    if battery_usage:
+        best_battery = min(battery_usage, key=battery_usage.get)
+        print(f"  Most Battery Efficient: {best_battery} ({battery_usage[best_battery]:.1f}%)")
+    
+    # TEST 6: Visualization option
+    print("\n" + "-" * 70)
+    print("TEST 6: Visualization (Optional)")
+    print("-" * 70)
+    
+    print("\n💡 To generate visual comparison plots:")
+    print("   comparator.visualize_comparison()")
+    print("   comparator.visualize_comparison(save_path='comparison.png')")
+    
+    print("\n" + "=" * 70)
+    print("✅ ALGORITHM COMPARISON TESTS COMPLETE")
+    print("=" * 70)
+
+
 """
 def main():
     print("\n")
@@ -991,19 +1339,22 @@ def main():
     print("=" * 70)
     
     # Commentez les tests que vous ne voulez pas exécuter
+    
+    # PART 1: Core Components
     # env = test_environment()
     # drone_strategy, env_strategy = test_strategies()
     # payoff_func = test_payoff_function()
     # test_logger()
     
-    # Test Minimax uniquement
+    # PART 2: Game Theory Algorithms
     # test_minimax()
-
-    # Test Nash
-    # test_nash()
+    test_nash()
+    # test_bayesian()
     
-    # Test Bayesian
-    test_bayesian()
+    # PART 4: Simulation Components
+    # test_sensor()
+    # test_engine()
+    # test_compare()
     
     print("\n" + "=" * 70)
     print(" TOUS LES TESTS TERMINÉS")
