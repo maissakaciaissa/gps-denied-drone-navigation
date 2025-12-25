@@ -136,7 +136,7 @@ class Environment:
             Distance to nearest obstacle, or None if no obstacles
         """
         if not self.obstacles:
-            return None
+            return 1000.0
             
         min_distance = float('inf')
         x1, y1 = position
@@ -145,7 +145,7 @@ class Environment:
             distance = np.sqrt((obs_x - x1)**2 + (obs_y - y1)**2)
             min_distance = min(min_distance, distance)
             
-        return min_distance if min_distance != float('inf') else None
+        return min_distance if min_distance != float('inf') else 1000.0
     
     def get_obstacles_in_direction(self, position: Tuple[int, int], direction: str, max_range: int = 5) -> Optional[Tuple[int, int]]:
         """

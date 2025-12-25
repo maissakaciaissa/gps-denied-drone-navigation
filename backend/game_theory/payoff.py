@@ -17,7 +17,7 @@ class PayoffFunction:
     
     def __init__(self, w1: float = 0.4, w2: float = 0.2, w3: float = 0.3, w4: float = 0.1,
                  collision_severity: str = "terminal", collision_penalty: float = 0.5,
-                 payoff_scale: float = 10.0):
+                 payoff_scale: float = 10.0, penalize_stay: bool = True, stay_penalty_factor: float = 0.6):
         """
         Initialize payoff function with weights.
         
@@ -45,6 +45,8 @@ class PayoffFunction:
         self.collision_severity = collision_severity
         self.collision_penalty = collision_penalty
         self.payoff_scale = payoff_scale  # Scale payoffs for more dramatic differences
+        self.penalize_stay = penalize_stay
+        self.stay_penalty_factor = stay_penalty_factor
         
     def calculate_mission_success(self, current_pos: Tuple[int, int], 
                                   goal_pos: Tuple[int, int], 
@@ -278,8 +280,26 @@ class PayoffFunction:
         # Penalize moving away from goal (but don't penalize STAY/ROTATE)
         if moving_away_from_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
                                                        DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
-            mission_success *= 0.3  # 70% penalty for actively moving away from goal
+            mission_success *= 0.1  # 90% penalty for actively moving away from goal
         
+        if self.penalize_stay and drone_action in [DroneAction.STAY, DroneAction.ROTATE]:
+            if new_pos != goal_pos:
+                # Calculer la distance normalisée (0 = objectif, 1 = très loin)
+                distance_ratio = new_dist_to_goal / initial_distance if initial_distance > 0 else 0
+                # Pénalité progressive : plus on est loin, plus c'est pénalisé
+                # À l'objectif (ratio=0) : pas de pénalité
+                # Très loin (ratio=1) : pénalité maximale (stay_penalty_factor)    
+                stay_penalty = distance_ratio * self.stay_penalty_factor
+                mission_success -= stay_penalty 
+
+        # 🆕 BONUS pour se rapprocher de l'objectif
+        if moving_toward_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
+                                                    DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
+            # Bonus proportionnel au progrès
+            progress = (current_dist_to_goal - new_dist_to_goal) / initial_distance
+            approach_bonus = progress * 3  # Bonus jusqu'à 0.5
+            mission_success += approach_bonus           
+
         energy_consumed = self.calculate_energy_consumed(
             new_battery_used, total_battery
         )
