@@ -34,12 +34,14 @@ class BayesianGameSolver:
     updates these beliefs as it observes outcomes (Bayesian learning).
     """
     
-    def __init__(self, payoff_function: PayoffFunction):
+    def __init__(self, payoff_function: PayoffFunction, use_mixed_strategy: bool = True):
         """
         Initialize the Bayesian game solver.
         
         Args:
             payoff_function: PayoffFunction instance for calculating payoffs
+            use_mixed_strategy: If True, use probabilistic action selection based on utilities.
+                               If False, always select the action with highest expected utility.
         """
         self.payoff_function = payoff_function
         
@@ -53,6 +55,9 @@ class BayesianGameSolver:
         self.prior_adversarial = 0.3
         self.prior_neutral = 0.5
         self.prior_favorable = 0.2
+        
+        # Strategy mode: mixed (probabilistic) or pure (deterministic)
+        self.use_mixed_strategy = use_mixed_strategy
         
     def initialize_beliefs(self, 
         prior_adversarial: Optional[float] = None, 
@@ -276,10 +281,11 @@ class BayesianGameSolver:
         available_actions: List[DroneAction], state_params: Dict, verbose: bool = False
     ) -> Tuple[DroneAction, float, Dict]:
         """
-        Choose the action with highest expected utility based on current beliefs.
+        Choose action based on expected utilities and current beliefs.
         
-        This is the main decision-making function that considers uncertainty
-        about the environment type.
+        Two modes:
+        - Pure strategy (deterministic): Always picks action with highest expected utility
+        - Mixed strategy (probabilistic): Samples action proportional to utilities (softmax)
         
         Args:
             available_actions: List of valid drone actions
@@ -295,14 +301,14 @@ class BayesianGameSolver:
         if not self.beliefs:
             self.initialize_beliefs()
         
-        best_action = None
-        best_expected_util = float('-inf')
         analysis = {}
+        utilities = []
         
         if verbose:
             print("\n" + "="*70)
             print("BAYESIAN DECISION ANALYSIS")
             print("="*70)
+            print(f"\nMode: {'Mixed Strategy (Probabilistic)' if self.use_mixed_strategy else 'Pure Strategy (Deterministic)'}")
             print("\nCurrent Beliefs:")
             for env_type, prob in self.beliefs.items():
                 print(f"  {env_type:15s}: {prob:6.2%}")
@@ -311,6 +317,7 @@ class BayesianGameSolver:
         # Evaluate each action
         for action in available_actions:
             expected_util = self.expected_utility(action, state_params)
+            utilities.append(expected_util)
             
             analysis[action] = {
                 'expected_utility': expected_util,
@@ -319,18 +326,71 @@ class BayesianGameSolver:
             
             if verbose:
                 print(f"Action: {action.value:15s} → Expected Utility: {expected_util:7.2f}")
+        
+        # Select action based on strategy mode
+        if self.use_mixed_strategy:
+            # Convert utilities to probabilities using softmax
+            # This gives higher probability to better actions while maintaining exploration
+            utilities_array = np.array(utilities)
             
-            if expected_util > best_expected_util:
-                best_expected_util = expected_util
-                best_action = action
+            # Adaptive temperature based on battery level AND distance efficiency
+            battery_level = state_params.get('total_battery', 100) - state_params.get('battery_used', 0)
+            battery_percentage = battery_level / state_params.get('total_battery', 100)
+            
+            # Calculate distance to goal
+            current_pos = state_params.get('current_pos', (0, 0))
+            goal_pos = state_params.get('goal_pos', (0, 0))
+            distance_to_goal = np.sqrt((goal_pos[0] - current_pos[0])**2 + (goal_pos[1] - current_pos[1])**2)
+            
+            # Estimate moves needed (ex (pessimistic): 1.5x straight-line distance for obstacles, or 2.0x)
+            estimated_moves_needed = distance_to_goal * 2.0
+            moves_available = battery_level / 2.0  # 2% per move
+            
+            # Critical battery ratio: if < 1.2, we're cutting it close
+            battery_efficiency_ratio = moves_available / max(estimated_moves_needed, 1)
+            
+            # Temperature calculation:
+            if battery_efficiency_ratio < 1.2:
+                # Critical: be very greedy
+                temperature = 0.1
+            else:
+                # Normal: adaptive based on battery
+                temperature = 0.2 + 0.6 * battery_percentage
+            
+            exp_utilities = np.exp(utilities_array / temperature)
+            probabilities = exp_utilities / np.sum(exp_utilities)
+            
+            # Sample action according to probabilities
+            selected_idx = np.random.choice(len(available_actions), p=probabilities)
+            selected_action = available_actions[selected_idx]
+            selected_utility = utilities[selected_idx]
+            
+            if verbose:
+                print("\n" + "-"*70)
+                print("Mixed Strategy Probabilities:")
+                print(f"Battery: {battery_percentage:.1%} ({battery_level:.0f}/{state_params.get('total_battery', 100):.0f})")
+                print(f"Distance to goal: {distance_to_goal:.1f}")
+                print(f"Efficiency ratio: {battery_efficiency_ratio:.2f}")
+                print(f"Temperature: {temperature:.2f}")
+                for action, prob in zip(available_actions, probabilities):
+                    print(f"  {action.value:15s}: {prob:6.2%}")
+                print("\n" + "-"*70)
+                print(f"SELECTED ACTION (sampled): {selected_action.value}")
+                print(f"Expected Utility: {selected_utility:.2f}")
+                print("="*70)
+        else:
+            # Pure strategy: always pick best action
+            best_idx = np.argmax(utilities)
+            selected_action = available_actions[best_idx]
+            selected_utility = utilities[best_idx]
+            
+            if verbose:
+                print("\n" + "-"*70)
+                print(f"SELECTED ACTION (best): {selected_action.value}")
+                print(f"Expected Utility: {selected_utility:.2f}")
+                print("="*70)
         
-        if verbose:
-            print("\n" + "-"*70)
-            print(f"BAYESIAN DECISION: {best_action.value}")
-            print(f"Expected Utility: {best_expected_util:.2f}")
-            print("="*70)
-        
-        return best_action, best_expected_util, analysis
+        return selected_action, selected_utility, analysis
     
     def solve(self,
         available_actions: List[DroneAction], state_params: Dict, verbose: bool = False
@@ -371,6 +431,24 @@ class BayesianGameSolver:
         """
         return len(self.observation_history)
     
+    def set_strategy_mode(self, use_mixed_strategy: bool):
+        """
+        Switch between pure and mixed strategy modes.
+        
+        Args:
+            use_mixed_strategy: True for probabilistic (mixed), False for deterministic (pure)
+        """
+        self.use_mixed_strategy = use_mixed_strategy
+    
+    def get_strategy_mode(self) -> str:
+        """
+        Get current strategy mode.
+        
+        Returns:
+            String describing current mode: "mixed" or "pure"
+        """
+        return "mixed" if self.use_mixed_strategy else "pure"
+    
     def reset(self):
         """
         Reset the solver to initial state.
@@ -382,7 +460,8 @@ class BayesianGameSolver:
     
     def __repr__(self) -> str:
         """String representation of the solver."""
+        mode = "mixed" if self.use_mixed_strategy else "pure"
         if self.beliefs:
             belief_str = ", ".join([f"{t}: {p:.2%}" for t, p in self.beliefs.items()])
-            return f"BayesianGameSolver(beliefs=[{belief_str}], observations={len(self.observation_history)})"
-        return f"BayesianGameSolver(payoff={self.payoff_function})"
+            return f"BayesianGameSolver(mode={mode}, beliefs=[{belief_str}], observations={len(self.observation_history)})"
+        return f"BayesianGameSolver(mode={mode}, payoff={self.payoff_function})"

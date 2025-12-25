@@ -35,10 +35,11 @@ class NashEquilibriumSolver:
         drone_actions: List[DroneAction], env_conditions: List[EnvironmentCondition]
     ) -> Tuple[MixedStrategy, MixedStrategy]:
         """
-        Find Nash equilibrium given payoff matrices using linear programming.
+        Find Nash equilibrium given payoff matrices.
         
-        This uses the support enumeration method combined with linear programming
-        to find mixed strategy Nash equilibrium.
+        Strategy:
+        1. First check for pure strategy Nash equilibrium (preferred)
+        2. If none exists, find mixed strategy Nash equilibrium
         
         Args:
             drone_payoff_matrix: Payoff matrix for drone (rows=drone actions, cols=env conditions)
@@ -52,16 +53,31 @@ class NashEquilibriumSolver:
         n_drone = len(drone_actions)
         n_env = len(env_conditions)
         
-        # Try to find Nash equilibrium using support enumeration
-        nash_drone_probs, nash_env_probs = self.support_enumeration(
-            drone_payoff_matrix, env_payoff_matrix
-        )
+        # STEP 1: Try to find PURE strategy Nash equilibrium first
+        pure_nash = self.find_pure_strategy_nash(drone_payoff_matrix, env_payoff_matrix)
         
-        # If support enumeration fails, try iterative best response
-        if nash_drone_probs is None or nash_env_probs is None:
-            nash_drone_probs, nash_env_probs = self.iterative_best_response(
-                drone_payoff_matrix, env_payoff_matrix, max_iterations=100
+        if pure_nash is not None:
+            pure_drone_idx, pure_env_idx = pure_nash
+            # Found pure strategy Nash - create probability vectors
+            nash_drone_probs = np.zeros(n_drone)
+            nash_env_probs = np.zeros(n_env)
+            nash_drone_probs[pure_drone_idx] = 1.0
+            nash_env_probs[pure_env_idx] = 1.0
+            
+            # print(f"✓ Pure Strategy Nash Equilibrium found: {drone_actions[pure_drone_idx].value}")
+        else:
+            # print("⚠ No Pure Strategy Nash - computing Mixed Strategy Nash...")
+            
+            # STEP 2: No pure Nash exists, find mixed strategy Nash equilibrium
+            nash_drone_probs, nash_env_probs = self.support_enumeration(
+                drone_payoff_matrix, env_payoff_matrix
             )
+            
+            # If support enumeration fails, try iterative best response
+            if nash_drone_probs is None or nash_env_probs is None:
+                nash_drone_probs, nash_env_probs = self.iterative_best_response(
+                    drone_payoff_matrix, env_payoff_matrix, max_iterations=100
+                )
         
         # Create mixed strategies from probability distributions
         drone_strategy = MixedStrategy(drone_actions, nash_drone_probs)
@@ -72,6 +88,45 @@ class NashEquilibriumSolver:
         self.last_nash_env = env_strategy
         
         return drone_strategy, env_strategy
+    
+    def find_pure_strategy_nash(self,
+        drone_payoff_matrix: np.ndarray, env_payoff_matrix: np.ndarray
+    ) -> Optional[Tuple[int, int]]:
+        """
+        Check if a pure strategy Nash equilibrium exists.
+        
+        A pure strategy Nash equilibrium (i*, j*) exists if:
+        - Drone action i* is best response to environment condition j*
+        - Environment condition j* is best response to drone action i*
+        
+        Args:
+            drone_payoff_matrix: Drone's payoff matrix [n_drone x n_env]
+            env_payoff_matrix: Environment's payoff matrix [n_drone x n_env]
+            
+        Returns:
+            (drone_action_idx, env_condition_idx) if pure Nash exists, None otherwise
+        """
+        n_drone, n_env = drone_payoff_matrix.shape
+        
+        for i in range(n_drone):
+            for j in range(n_env):
+                # Check if (i, j) is a Nash equilibrium
+                
+                # 1. Is action i the best response for drone given environment plays j?
+                drone_best_response = np.argmax(drone_payoff_matrix[:, j])
+                if drone_best_response != i:
+                    continue
+                
+                # 2. Is condition j the best response for environment given drone plays i?
+                env_best_response = np.argmax(env_payoff_matrix[i, :])
+                if env_best_response != j:
+                    continue
+                
+                # Both conditions satisfied - (i, j) is a pure strategy Nash equilibrium
+                return (i, j)
+        
+        # No pure strategy Nash equilibrium found
+        return None
     
     def support_enumeration(self, 
         drone_payoff_matrix: np.ndarray, env_payoff_matrix: np.ndarray
@@ -450,6 +505,8 @@ class NashEquilibriumSolver:
         """
         Solve for Nash equilibrium and return a recommended action.
         
+        Applies boundary avoidance and invalid move detection.
+        
         Args:
             state_params: Current state parameters for payoff calculation
             drone_actions: List of available drone actions (default: all actions)
@@ -469,6 +526,11 @@ class NashEquilibriumSolver:
             drone_actions, env_conditions, state_params
         )
         
+        # Apply boundary penalties to payoff matrix
+        drone_matrix = self._apply_boundary_penalties(
+            drone_matrix, drone_actions, state_params
+        )
+        
         # Find Nash equilibrium
         nash_drone, nash_env = self.find_nash_equilibrium(
             drone_matrix, env_matrix, drone_actions, env_conditions
@@ -478,6 +540,80 @@ class NashEquilibriumSolver:
         action = nash_drone.sample()
         
         return action
+    
+    def _apply_boundary_penalties(self,
+        drone_matrix: np.ndarray,
+        drone_actions: List[DroneAction],
+        state_params: Dict
+    ) -> np.ndarray:
+        """
+        Apply heavy penalties to actions that move toward boundaries or away from goal.
+        
+        Args:
+            drone_matrix: Original drone payoff matrix [n_actions x n_conditions]
+            drone_actions: List of drone actions
+            state_params: Current state parameters
+            
+        Returns:
+            Modified payoff matrix with boundary penalties
+        """
+        modified_matrix = drone_matrix.copy()
+        
+        current_pos = state_params.get('current_pos', (0, 0))
+        goal_pos = state_params.get('goal_pos', (0, 0))
+        environment = state_params.get('environment')
+        
+        if environment is None:
+            return modified_matrix
+        
+        x, y = current_pos
+        max_x = environment.width - 1
+        max_y = environment.height - 1
+        
+        for i, action in enumerate(drone_actions):
+            # Simulate where this action would take us
+            dx, dy = self._get_action_delta(action)
+            new_x, new_y = x + dx, y + dy
+            
+            # 1. BOUNDARY PENALTY: Heavy penalty for actions toward boundaries
+            boundary_penalty = 0
+            if new_x <= 0 and dx < 0:  # Moving left toward left boundary
+                boundary_penalty = 50
+            if new_x >= max_x and dx > 0:  # Moving right toward right boundary
+                boundary_penalty = 50
+            if new_y <= 0 and dy < 0:  # Moving down toward bottom boundary
+                boundary_penalty = 50
+            if new_y >= max_y and dy > 0:  # Moving up toward top boundary
+                boundary_penalty = 50
+            
+            # 2. WRONG DIRECTION PENALTY: Penalty for moving away from goal
+            current_dist = np.sqrt((goal_pos[0] - x)**2 + (goal_pos[1] - y)**2)
+            new_dist = np.sqrt((goal_pos[0] - new_x)**2 + (goal_pos[1] - new_y)**2)
+            
+            if new_dist > current_dist:
+                # Moving away from goal
+                direction_penalty = 30
+            else:
+                direction_penalty = 0
+            
+            # Apply penalties to all environment conditions for this action
+            total_penalty = boundary_penalty + direction_penalty
+            modified_matrix[i, :] -= total_penalty
+        
+        return modified_matrix
+    
+    def _get_action_delta(self, action: DroneAction) -> Tuple[int, int]:
+        """Get the (dx, dy) change for a given action."""
+        if action == DroneAction.MOVE_UP:
+            return (0, 1)
+        elif action == DroneAction.MOVE_DOWN:
+            return (0, -1)
+        elif action == DroneAction.MOVE_LEFT:
+            return (-1, 0)
+        elif action == DroneAction.MOVE_RIGHT:
+            return (1, 0)
+        else:  # STAY
+            return (0, 0)
     
     def get_nash_strategies(self) -> Tuple[Optional[MixedStrategy], Optional[MixedStrategy]]:
         """

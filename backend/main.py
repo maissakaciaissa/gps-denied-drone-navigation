@@ -663,13 +663,24 @@ def test_nash():
     
     # Réinitialiser le drone
     drone2 = Drone(environment=env, battery_capacity=100)
-    max_steps = 5
+    max_steps = 1000  # Safety limit to prevent infinite loops
     
-    print(f"\nNavigation de {max_steps} étapes avec Nash Equilibrium")
+    print(f"\nNavigation avec Nash Equilibrium (jusqu'à objectif ou batterie épuisée)")
     print(f"Position initiale: {drone2.get_position()}")
     print(f"Objectif: {env.goal_pos}\n")
     
-    for step in range(max_steps):
+    step = 0
+    while step < max_steps:
+        # Vérifier si objectif atteint
+        if env.is_goal_reached(drone2.get_position()):
+            print(f"\n🎯 Objectif atteint en {step} étapes!")
+            break
+        
+        # Vérifier si batterie épuisée
+        if drone2.get_battery_level() <= 0:
+            print(f"\n🔋 Batterie épuisée après {step} étapes!")
+            break
+        
         # Construire state_params
         state_params = {
             'current_pos': drone2.get_position(),
@@ -690,21 +701,98 @@ def test_nash():
         # Exécuter l'action
         success = drone2.move(action)
         
-        # Afficher
-        distance_to_goal = env.distance_to_goal(drone2.get_position())
-        print(f"Étape {step+1}: {action.value:15s} → {drone2.get_position()} | "
-              f"Batterie: {drone2.get_battery_percentage():5.1f}% | "
-              f"Distance: {distance_to_goal:5.2f}")
+        step += 1
         
-        # Vérifier si objectif atteint
-        if env.is_goal_reached(drone2.get_position()):
-            print(f"\n🎯 Objectif atteint en {step+1} étapes!")
-            break
+        # Afficher (show every step for first 10, then every 10 steps)
+        distance_to_goal = env.distance_to_goal(drone2.get_position())
+        if step <= 10 or step % 10 == 0:
+            print(f"Étape {step}: {action.value:15s} → {drone2.get_position()} | "
+                  f"Batterie: {drone2.get_battery_percentage():5.1f}% | "
+                  f"Distance: {distance_to_goal:5.2f}")
+    
+    if step >= max_steps:
+        print(f"\n⚠️ Limite de sécurité atteinte ({max_steps} étapes)")
     
     print(f"\nPosition finale: {drone2.get_position()}")
     print(f"Distance finale à l'objectif: {env.distance_to_goal(drone2.get_position()):.2f}")
     print(f"Batterie restante: {drone2.get_battery_percentage():.1f}%")
     print(f"Cellules explorées: {len(drone2.explored_cells)}")
+    
+    # Additional Test: Different Environment Scenarios
+    print("\n" + "-" * 70)
+    print("TEST 6: Nash sur Environnements Variés")
+    print("-" * 70)
+    
+    test_environments = [
+        {
+            'name': 'Petit Dense',
+            'size': (10, 10),
+            'start': (1, 1),
+            'goal': (8, 8),
+            'obstacles': [(3, 3), (3, 4), (3, 5), (4, 3), (5, 3), (6, 5), (6, 6), (7, 6)]
+        },
+        {
+            'name': 'Grand Sparse',
+            'size': (25, 25),
+            'start': (2, 2),
+            'goal': (22, 22),
+            'obstacles': [(10, 10), (10, 11), (15, 15), (15, 16), (20, 8)]
+        },
+        {
+            'name': 'Corridor',
+            'size': (15, 8),
+            'start': (1, 4),
+            'goal': (13, 4),
+            'obstacles': [(5, 2), (5, 3), (5, 5), (5, 6), (10, 2), (10, 3), (10, 5), (10, 6)]
+        }
+    ]
+    
+    for i, env_config in enumerate(test_environments):
+        print(f"\n--- Environnement {i+1}: {env_config['name']} ---")
+        test_env = Environment(
+            width=env_config['size'][0],
+            height=env_config['size'][1],
+            start_pos=env_config['start'],
+            goal_pos=env_config['goal']
+        )
+        test_env.add_obstacles(env_config['obstacles'])
+        
+        test_drone = Drone(environment=test_env, battery_capacity=100)
+        test_nash = NashEquilibriumSolver(payoff_func)
+        
+        print(f"Taille: {env_config['size'][0]}x{env_config['size'][1]}, "
+              f"Obstacles: {len(env_config['obstacles'])}, "
+              f"Distance: {test_env.distance_to_goal(env_config['start']):.1f}")
+        
+        step = 0
+        max_steps = 200
+        while step < max_steps:
+            if test_env.is_goal_reached(test_drone.get_position()):
+                print(f"✅ Succès en {step} étapes, Batterie: {test_drone.get_battery_percentage():.1f}%")
+                break
+            if test_drone.get_battery_level() <= 0:
+                print(f"❌ Batterie épuisée à {step} étapes")
+                break
+            
+            state_params = {
+                'current_pos': test_drone.get_position(),
+                'goal_pos': test_env.goal_pos,
+                'initial_distance': test_env.distance_to_goal(env_config['start']),
+                'battery_used': test_drone.battery_capacity - test_drone.get_battery_level(),
+                'total_battery': test_drone.battery_capacity,
+                'distance_to_nearest_obstacle': test_env.get_nearest_obstacle_distance(test_drone.get_position()),
+                'explored_cells': len(test_drone.explored_cells),
+                'total_cells': test_env.width * test_env.height,
+                'collision': False,
+                'environment': test_env
+            }
+            
+            action = test_nash.solve(state_params)
+            test_drone.move(action)
+            step += 1
+        
+        if step >= max_steps:
+            print(f"⏱️ Timeout ({max_steps} étapes), Distance finale: {test_env.distance_to_goal(test_drone.get_position()):.1f}")
     
     print("\n" + "=" * 70)
     print("✅ TESTS NASH EQUILIBRIUM TERMINÉS")
@@ -744,9 +832,10 @@ def test_bayesian():
     payoff_func = PayoffFunction(w1=0.4, w2=0.2, w3=0.3, w4=0.1)
     print(f"\nPayoff Function: {payoff_func}")
     
-    # 4. Créer le solver Bayesian
-    bayesian_solver = BayesianGameSolver(payoff_func)
-    print(f"\nBayesian Solver créé")
+    # 4. Créer le solver Bayesian (mixed strategy by default)
+    bayesian_solver = BayesianGameSolver(payoff_func, use_mixed_strategy=True)
+    print(f"\nBayesian Solver créé: {bayesian_solver}")
+    print(f"Strategy Mode: {bayesian_solver.get_strategy_mode()}")
     
     # 5. Initialiser les croyances (priors)
     print("\n--- Belief Initialization ---")
@@ -860,23 +949,78 @@ def test_bayesian():
         print(f"  {env_type:15s}: {prob:6.2%}")
     print(f"\nTotal observations: {bayesian_solver.get_observation_count()}")
     
-    # 12. Test 6: Navigation Multi-Étapes avec Bayesian
+    # 11. Test 5.5: Pure vs Mixed Strategy Demonstration
     print("\n" + "-" * 70)
-    print("TEST 6: Navigation Multi-Étapes avec Bayesian Learning")
+    print("TEST 5.5: Pure vs Mixed Strategy Comparison")
+    print("-" * 70)
+    
+    # Reset and test pure strategy
+    bayesian_solver.reset()
+    bayesian_solver.initialize_beliefs(0.3, 0.5, 0.2)
+    bayesian_solver.set_strategy_mode(False)  # Pure strategy
+    
+    drone_pure = Drone(environment=env, battery_capacity=100)
+    state_params = {
+        'current_pos': drone_pure.get_position(),
+        'goal_pos': env.goal_pos,
+        'initial_distance': env.distance_to_goal(env.start_pos),
+        'battery_used': 0,
+        'total_battery': 100,
+        'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone_pure.get_position()),
+        'explored_cells': len(drone_pure.explored_cells),
+        'total_cells': env.width * env.height,
+        'collision': False,
+        'environment': env
+    }
+    
+    print(f"\nPURE STRATEGY MODE (Deterministic):")
+    print("Calling solve() 3 times with same state:")
+    for i in range(3):
+        action = bayesian_solver.solve(list(DroneAction), state_params, verbose=False)
+        print(f"  Call {i+1}: {action.value}")
+    
+    # Now test mixed strategy
+    bayesian_solver.set_strategy_mode(True)  # Mixed strategy
+    
+    print(f"\nMIXED STRATEGY MODE (Probabilistic):")
+    print("Calling solve() 3 times with same state:")
+    for i in range(3):
+        action = bayesian_solver.solve(list(DroneAction), state_params, verbose=False)
+        print(f"  Call {i+1}: {action.value}")
+    
+    print("\n💡 Notice: Pure strategy always picks same action (deterministic)")
+    print("   Mixed strategy varies (probabilistic exploration)")
+    
+    # 12. Test 6: Navigation Multi-Étapes avec PURE Strategy
+    print("\n" + "-" * 70)
+    print("TEST 6: Navigation Multi-Étapes avec PURE Strategy (Deterministic)")
     print("-" * 70)
     
     # Réinitialiser pour navigation
     bayesian_solver.reset()
     bayesian_solver.initialize_beliefs(0.3, 0.5, 0.2)
+    bayesian_solver.set_strategy_mode(False)  # PURE STRATEGY - Deterministic
     
     drone2 = Drone(environment=env, battery_capacity=100)
-    max_steps = 5
+    max_steps = 1000  # Safety limit to prevent infinite loops
     
-    print(f"\nNavigation de {max_steps} étapes avec Bayesian")
+    print(f"\nNavigation avec Bayesian PURE Strategy (jusqu'à objectif ou batterie épuisée)")
+    print(f"Mode: {bayesian_solver.get_strategy_mode().upper()} - Toujours choisit la meilleure action")
     print(f"Position initiale: {drone2.get_position()}")
     print(f"Objectif: {env.goal_pos}\n")
     
-    for step in range(max_steps):
+    step = 0
+    while step < max_steps:
+        # Vérifier si objectif atteint
+        if env.is_goal_reached(drone2.get_position()):
+            print(f"\n🎯 Objectif atteint en {step} étapes!")
+            break
+        
+        # Vérifier si batterie épuisée
+        if drone2.get_battery_level() <= 0:
+            print(f"\n🔋 Batterie épuisée après {step} étapes!")
+            break
+        
         # Construire state_params
         state_params = {
             'current_pos': drone2.get_position(),
@@ -891,7 +1035,7 @@ def test_bayesian():
             'environment': env
         }
         
-        # Bayesian choisit l'action
+        # Bayesian choisit l'action (PURE - déterministe)
         action = bayesian_solver.solve(list(DroneAction), state_params)
         
         # Simuler une observation (ici on sample une condition)
@@ -903,26 +1047,187 @@ def test_bayesian():
         # Exécuter l'action
         success = drone2.move(action)
         
-        # Afficher
+        step += 1
+        
+        # Afficher (show every step for first 10, then every 10 steps)
         distance_to_goal = env.distance_to_goal(drone2.get_position())
         beliefs = bayesian_solver.get_beliefs()
-        print(f"Étape {step+1}: {action.value:15s} → {drone2.get_position()} | "
-              f"Batterie: {drone2.get_battery_percentage():5.1f}% | "
-              f"Distance: {distance_to_goal:5.2f} | "
-              f"Beliefs: Adv={beliefs['adversarial']:.1%}")
-        
-        # Vérifier si objectif atteint
-        if env.is_goal_reached(drone2.get_position()):
-            print(f"\n🎯 Objectif atteint en {step+1} étapes!")
-            break
+        if step <= 10 or step % 10 == 0:
+            print(f"Étape {step}: {action.value:15s} → {drone2.get_position()} | "
+                  f"Batterie: {drone2.get_battery_percentage():5.1f}% | "
+                  f"Distance: {distance_to_goal:5.2f} | "
+                  f"Beliefs: Adv={beliefs['adversarial']:.1%}")
     
-    print(f"\nPosition finale: {drone2.get_position()}")
-    print(f"Distance finale à l'objectif: {env.distance_to_goal(drone2.get_position()):.2f}")
-    print(f"Batterie restante: {drone2.get_battery_percentage():.1f}%")
-    print(f"Cellules explorées: {len(drone2.explored_cells)}")
-    print(f"Croyances finales:")
+    if step >= max_steps:
+        print(f"\n⚠️ Limite de sécurité atteinte ({max_steps} étapes)")
+    
+    print(f"\nRésultats PURE Strategy:")
+    print(f"  Position finale: {drone2.get_position()}")
+    print(f"  Distance finale à l'objectif: {env.distance_to_goal(drone2.get_position()):.2f}")
+    print(f"  Batterie restante: {drone2.get_battery_percentage():.1f}%")
+    print(f"  Cellules explorées: {len(drone2.explored_cells)}")
+    print(f"  Croyances finales:")
     for env_type, prob in bayesian_solver.get_beliefs().items():
-        print(f"  {env_type:15s}: {prob:6.2%}")
+        print(f"    {env_type:15s}: {prob:6.2%}")
+    
+    # 13. Test 7: Navigation Multi-Étapes avec MIXED Strategy
+    print("\n" + "-" * 70)
+    print("TEST 7: Navigation Multi-Étapes avec MIXED Strategy (Probabilistic)")
+    print("-" * 70)
+    
+    # Réinitialiser pour navigation
+    bayesian_solver.reset()
+    bayesian_solver.initialize_beliefs(0.3, 0.5, 0.2)
+    bayesian_solver.set_strategy_mode(True)  # MIXED STRATEGY - Probabilistic
+    
+    drone3 = Drone(environment=env, battery_capacity=100)
+    max_steps = 1000  # Safety limit to prevent infinite loops
+    
+    print(f"\nNavigation avec Bayesian MIXED Strategy (jusqu'à objectif ou batterie épuisée)")
+    print(f"Mode: {bayesian_solver.get_strategy_mode().upper()} - Actions probabilistes (exploration)")
+    print(f"Position initiale: {drone3.get_position()}")
+    print(f"Objectif: {env.goal_pos}\n")
+    
+    step = 0
+    while step < max_steps:
+        # Vérifier si objectif atteint
+        if env.is_goal_reached(drone3.get_position()):
+            print(f"\n🎯 Objectif atteint en {step} étapes!")
+            break
+        
+        # Vérifier si batterie épuisée
+        if drone3.get_battery_level() <= 0:
+            print(f"\n🔋 Batterie épuisée après {step} étapes!")
+            break
+        
+        # Construire state_params
+        state_params = {
+            'current_pos': drone3.get_position(),
+            'goal_pos': env.goal_pos,
+            'initial_distance': env.distance_to_goal(env.start_pos),
+            'battery_used': drone3.battery_capacity - drone3.get_battery_level(),
+            'total_battery': drone3.battery_capacity,
+            'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone3.get_position()),
+            'explored_cells': len(drone3.explored_cells),
+            'total_cells': env.width * env.height,
+            'collision': False,
+            'environment': env
+        }
+        
+        # Bayesian choisit l'action (MIXED - probabiliste)
+        action = bayesian_solver.solve(list(DroneAction), state_params)
+        
+        # Simuler une observation
+        observed_condition = EnvironmentCondition.CLEAR_PATH  # Simplified
+        
+        # Mettre à jour les croyances
+        bayesian_solver.update_beliefs(action, observed_condition, 70.0)
+        
+        # Exécuter l'action
+        success = drone3.move(action)
+        
+        step += 1
+        
+        # Afficher (show every step for first 10, then every 10 steps)
+        distance_to_goal = env.distance_to_goal(drone3.get_position())
+        beliefs = bayesian_solver.get_beliefs()
+        if step <= 10 or step % 10 == 0:
+            print(f"Étape {step}: {action.value:15s} → {drone3.get_position()} | "
+                  f"Batterie: {drone3.get_battery_percentage():5.1f}% | "
+                  f"Distance: {distance_to_goal:5.2f} | "
+                  f"Beliefs: Adv={beliefs['adversarial']:.1%}")
+    
+    if step >= max_steps:
+        print(f"\n⚠️ Limite de sécurité atteinte ({max_steps} étapes)")
+    
+    print(f"\nRésultats MIXED Strategy:")
+    print(f"  Position finale: {drone3.get_position()}")
+    print(f"  Distance finale à l'objectif: {env.distance_to_goal(drone3.get_position()):.2f}")
+    print(f"  Batterie restante: {drone3.get_battery_percentage():.1f}%")
+    print(f"  Cellules explorées: {len(drone3.explored_cells)}")
+    print(f"  Croyances finales:")
+    for env_type, prob in bayesian_solver.get_beliefs().items():
+        print(f"    {env_type:15s}: {prob:6.2%}")
+    
+    print("\n💡 Comparaison: Pure strategy est déterministe et peut être plus rapide,")
+    print("   mais Mixed strategy explore davantage et évite les optima locaux.")
+    
+    # Additional Tests: Different Environments
+    print("\n" + "-" * 70)
+    print("TEST 8-11: Bayesian sur Environnements Variés")
+    print("-" * 70)
+    
+    test_environments = [
+        {
+            'name': 'Petit Dense',
+            'size': (10, 10),
+            'start': (1, 1),
+            'goal': (8, 8),
+            'obstacles': [(3, 3), (3, 4), (3, 5), (4, 3), (5, 3), (6, 5), (6, 6), (7, 6)]
+        },
+        {
+            'name': 'Grand Sparse',
+            'size': (25, 25),
+            'start': (2, 2),
+            'goal': (22, 22),
+            'obstacles': [(10, 10), (10, 11), (15, 15), (15, 16), (20, 8)]
+        }
+    ]
+    
+    test_num = 8
+    for env_config in test_environments:
+        for use_mixed in [False, True]:
+            mode_name = "MIXED" if use_mixed else "PURE"
+            print(f"\n--- TEST {test_num}: {env_config['name']} - {mode_name} ---")
+            
+            test_env = Environment(
+                width=env_config['size'][0],
+                height=env_config['size'][1],
+                start_pos=env_config['start'],
+                goal_pos=env_config['goal']
+            )
+            test_env.add_obstacles(env_config['obstacles'])
+            
+            test_drone = Drone(environment=test_env, battery_capacity=100)
+            bayesian_test_solver = BayesianGameSolver(payoff_func, use_mixed_strategy=use_mixed)
+            
+            print(f"Mode: {bayesian_test_solver.get_strategy_mode()}")
+            print(f"Taille: {env_config['size'][0]}x{env_config['size'][1]}, "
+                  f"Obstacles: {len(env_config['obstacles'])}, "
+                  f"Distance: {test_env.distance_to_goal(env_config['start']):.1f}")
+            
+            step = 0
+            max_steps = 300
+            while step < max_steps:
+                if test_env.is_goal_reached(test_drone.get_position()):
+                    print(f"✅ Succès en {step} étapes, Batterie: {test_drone.get_battery_percentage():.1f}%")
+                    break
+                if test_drone.get_battery_level() <= 0:
+                    print(f"❌ Batterie épuisée à {step} étapes")
+                    break
+                
+                state_params = {
+                    'current_pos': test_drone.get_position(),
+                    'goal_pos': test_env.goal_pos,
+                    'initial_distance': test_env.distance_to_goal(env_config['start']),
+                    'battery_used': test_drone.battery_capacity - test_drone.get_battery_level(),
+                    'total_battery': test_drone.battery_capacity,
+                    'distance_to_nearest_obstacle': test_env.get_nearest_obstacle_distance(test_drone.get_position()),
+                    'explored_cells': len(test_drone.explored_cells),
+                    'total_cells': test_env.width * test_env.height,
+                    'collision': False,
+                    'environment': test_env
+                }
+                
+                available_actions = test_drone.get_valid_actions()
+                action = bayesian_test_solver.solve(available_actions, state_params)
+                test_drone.move(action)
+                step += 1
+            
+            if step >= max_steps:
+                print(f"⏱️ Timeout ({max_steps} étapes), Distance finale: {test_env.distance_to_goal(test_drone.get_position()):.1f}")
+            
+            test_num += 1
     
     print("\n" + "=" * 70)
     print("✅ TESTS BAYESIAN SOLVER TERMINÉS")

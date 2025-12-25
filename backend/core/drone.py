@@ -78,10 +78,10 @@ class Drone:
     def _get_energy_cost(self, action: DroneAction) -> float:
         """Retourne le coût énergétique d'une action."""
         costs = {
-            DroneAction.MOVE_UP: 5,
-            DroneAction.MOVE_DOWN: 5,
-            DroneAction.MOVE_LEFT: 5,
-            DroneAction.MOVE_RIGHT: 5,
+            DroneAction.MOVE_UP: 2,
+            DroneAction.MOVE_DOWN: 2,
+            DroneAction.MOVE_LEFT: 2,
+            DroneAction.MOVE_RIGHT: 2,
             DroneAction.STAY: 1,
             DroneAction.ROTATE: 2
         }
