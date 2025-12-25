@@ -330,34 +330,9 @@ class BayesianGameSolver:
         # Select action based on strategy mode
         if self.use_mixed_strategy:
             # Convert utilities to probabilities using softmax
-            # This gives higher probability to better actions while maintaining exploration
             utilities_array = np.array(utilities)
             
-            # Adaptive temperature based on battery level AND distance efficiency
-            battery_level = state_params.get('total_battery', 100) - state_params.get('battery_used', 0)
-            battery_percentage = battery_level / state_params.get('total_battery', 100)
-            
-            # Calculate distance to goal
-            current_pos = state_params.get('current_pos', (0, 0))
-            goal_pos = state_params.get('goal_pos', (0, 0))
-            distance_to_goal = np.sqrt((goal_pos[0] - current_pos[0])**2 + (goal_pos[1] - current_pos[1])**2)
-            
-            # Estimate moves needed (ex (pessimistic): 1.5x straight-line distance for obstacles, or 2.0x)
-            estimated_moves_needed = distance_to_goal * 2.0
-            moves_available = battery_level / 2.0  # 2% per move
-            
-            # Critical battery ratio: if < 1.2, we're cutting it close
-            battery_efficiency_ratio = moves_available / max(estimated_moves_needed, 1)
-            
-            # Temperature calculation:
-            if battery_efficiency_ratio < 1.2:
-                # Critical: be very greedy
-                temperature = 0.1
-            else:
-                # Normal: adaptive based on battery
-                temperature = 0.2 + 0.6 * battery_percentage
-            
-            exp_utilities = np.exp(utilities_array / temperature)
+            exp_utilities = np.exp(utilities_array)
             probabilities = exp_utilities / np.sum(exp_utilities)
             
             # Sample action according to probabilities
@@ -368,10 +343,6 @@ class BayesianGameSolver:
             if verbose:
                 print("\n" + "-"*70)
                 print("Mixed Strategy Probabilities:")
-                print(f"Battery: {battery_percentage:.1%} ({battery_level:.0f}/{state_params.get('total_battery', 100):.0f})")
-                print(f"Distance to goal: {distance_to_goal:.1f}")
-                print(f"Efficiency ratio: {battery_efficiency_ratio:.2f}")
-                print(f"Temperature: {temperature:.2f}")
                 for action, prob in zip(available_actions, probabilities):
                     print(f"  {action.value:15s}: {prob:6.2%}")
                 print("\n" + "-"*70)

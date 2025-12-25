@@ -280,7 +280,7 @@ class PayoffFunction:
         # Penalize moving away from goal (but don't penalize STAY/ROTATE)
         if moving_away_from_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
                                                        DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
-            mission_success *= 0.1  # 90% penalty for actively moving away from goal
+            mission_success -= 3.0  # flat penalty for actively moving away from goal
         
         if self.penalize_stay and drone_action in [DroneAction.STAY, DroneAction.ROTATE]:
             if new_pos != goal_pos:
