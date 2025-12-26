@@ -280,7 +280,7 @@ class PayoffFunction:
         # Penalize moving away from goal (but don't penalize STAY/ROTATE)
         if moving_away_from_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
                                                        DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
-            mission_success *= 0.1  # 90% penalty for actively moving away from goal
+            mission_success -= 3.0  # flat penalty for actively moving away from goal
         
         if self.penalize_stay and drone_action in [DroneAction.STAY, DroneAction.ROTATE]:
             if new_pos != goal_pos:
@@ -292,12 +292,12 @@ class PayoffFunction:
                 stay_penalty = distance_ratio * self.stay_penalty_factor
                 mission_success -= stay_penalty 
 
-        # 🆕 BONUS pour se rapprocher de l'objectif
+        # BONUS pour se rapprocher de l'objectif
         if moving_toward_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
                                                     DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
             # Bonus proportionnel au progrès
             progress = (current_dist_to_goal - new_dist_to_goal) / initial_distance
-            approach_bonus = progress * 3  # Bonus jusqu'à 0.5
+            approach_bonus = progress * 0.5  # Bonus jusqu'à 0.5
             mission_success += approach_bonus           
 
         energy_consumed = self.calculate_energy_consumed(

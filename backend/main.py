@@ -624,19 +624,25 @@ def test_minimax_mixed_strategies():
     ]
     env.add_obstacles(obstacles)
     
-    # Créer drone
-    drone = Drone(environment=env, battery_capacity=100)
+    # Créer drone avec PLUS de batterie pour atteindre l'objectif
+    drone = Drone(environment=env, battery_capacity=150)
     
-    # Créer payoff function
-    payoff_func = PayoffFunction(w1=0.7, w2=0.05, w3=0.15, w4=0.1, stay_penalty_factor=0.4)
+    # Créer payoff function avec poids OPTIMISÉS pour encourager le progrès
+    payoff_func = PayoffFunction(
+        w1=0.85,  # Plus d'importance sur le progrès vers l'objectif (était 0.7)
+        w2=0.03,  # Moins d'importance sur l'énergie (était 0.05)
+        w3=0.07,  # Moins de peur des obstacles (était 0.15)
+        w4=0.05,  # Moins d'importance sur l'exploration (était 0.1)
+        stay_penalty_factor=0.8  # Plus de pénalité pour rester immobile (était 0.4)
+    )
     minimax_solver = Minimax(payoff=payoff_func)
     
-    # Définir les stratégies mixtes à tester
+    # Définir les stratégies mixtes à tester (AJOUT de Goal-Oriented)
     drone_mixed_strategies = [
-        ('Uniform', DroneStrategies.create_uniform_mixed_strategy()),
-        ('Cautious', DroneStrategies.create_cautious_strategy()),
+        ('Goal-Oriented', DroneStrategies.create_goal_oriented_strategy()),  # NOUVEAU !
         ('Aggressive', DroneStrategies.create_aggressive_strategy()),
-        ('Balanced', DroneStrategies.create_balanced_strategy())
+        ('Balanced', DroneStrategies.create_balanced_strategy()),
+        ('Cautious', DroneStrategies.create_cautious_strategy())
     ]
     
     env_mixed_strategies = [
@@ -720,9 +726,9 @@ def test_minimax_mixed_strategies():
     print("SIMULATION INTELLIGENTE (Réévaluation continue)")
     print(f"{'='*70}")
     
-    # Réinitialiser le drone
-    drone2 = Drone(environment=env, battery_capacity=100)
-    max_steps = 100
+    # Réinitialiser le drone avec PLUS de batterie
+    drone2 = Drone(environment=env, battery_capacity=150)
+    max_steps = 150
     
     for step in range(max_steps):
         current_pos = drone2.get_position()
@@ -741,9 +747,22 @@ def test_minimax_mixed_strategies():
             'environment': env
         }
         
+        # NOUVEAU : Créer une stratégie directionnelle adaptée à la position actuelle
+        directional_strategy = DroneStrategies.create_directional_strategy(
+            drone2.get_position(), 
+            env.goal_pos
+        )
+        
+        # Inclure la stratégie directionnelle dans les options à évaluer
+        drone_strategies_adaptive = [
+            ('Directional', directional_strategy),  # Stratégie adaptée à la position !
+            ('Goal-Oriented', DroneStrategies.create_goal_oriented_strategy()),
+            ('Aggressive', DroneStrategies.create_aggressive_strategy())
+        ]
+        
         # Réévaluer les stratégies à chaque étape
         best_strategy_name_updated, best_strategy_updated, best_payoff_updated = minimax_solver.solve_mixed_strategy(
-            drone_mixed_strategies,
+            drone_strategies_adaptive,  # Utiliser les stratégies adaptatives
             env_mixed_strategies,
             state_params_updated,
             verbose=False  # Pas besoin d'afficher à chaque fois
