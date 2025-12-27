@@ -318,3 +318,120 @@ class Minimax:
         return best_strategy_name, best_strategy, best_guaranteed_payoff
     
     
+    def evaluate_pure_action_vs_mixed_env(self,
+                                          drone_action: DroneAction,
+                                          env_strategy: MixedStrategy,
+                                          state_params: Dict) -> float:
+        """
+        Évalue une action pure du drone contre une stratégie mixte de l'environnement.
+        Calcule le payoff attendu en pondérant par les probabilités environnementales.
+        
+        Formule: E[u(a, σe)] = Σ σe(c) × u(a, c)
+        
+        Args:
+            drone_action: Action pure du drone (ex: MOVE_UP)
+            env_strategy: Stratégie mixte de l'environnement (ex: Typical: 70% CLEAR, 15% OBSTACLE...)
+            state_params: État actuel (position, batterie, etc.)
+        
+        Returns:
+            Payoff attendu (float)
+        """
+        expected_payoff = 0.0
+        
+        # Somme pondérée sur toutes les conditions environnementales
+        for env_condition, env_prob in zip(env_strategy.strategies, env_strategy.probabilities):
+            # Calculer le payoff pour cette paire (action pure, condition)
+            drone_payoff, _ = self.payoff.compute_payoff(
+                drone_action,
+                env_condition,
+                state_params['current_pos'],
+                state_params['goal_pos'],
+                state_params['initial_distance'],
+                state_params['battery_used'],
+                state_params['total_battery'],
+                state_params['distance_to_nearest_obstacle'],
+                state_params['explored_cells'],
+                state_params['total_cells'],
+                state_params.get('collision', False),
+                state_params.get('environment', None)
+            )
+            
+            # Ajouter à l'espérance (payoff × probabilité)
+            expected_payoff += env_prob * drone_payoff
+        
+        return expected_payoff
+    
+    
+    def minimax_pure_vs_fixed_env(self,
+                                  available_actions: List[DroneAction],
+                                  env_strategy: MixedStrategy,
+                                  env_name: str,
+                                  state_params: Dict,
+                                  verbose: bool = False) -> Tuple[DroneAction, float, Dict]:
+        """
+        Évalue les actions pures du drone contre UNE SEULE stratégie environnementale FIXE.
+        Contrairement à minimax_pure_vs_mixed qui évalue contre TOUTES les stratégies,
+        cette méthode utilise une distribution de probabilité environnementale constante.
+        
+        Usage: Quand l'environnement a une distribution fixe (ex: "Typical" tout le temps)
+        
+        Formule: max_a E[u(a, σe_fixe)]
+        
+        Args:
+            available_actions: Liste d'actions pures disponibles au drone
+            env_strategy: Stratégie mixte FIXE de l'environnement (ex: Typical)
+            env_name: Nom de la stratégie (ex: "Typical")
+            state_params: État actuel
+            verbose: Si True, affiche l'analyse détaillée
+        
+        Returns:
+            (meilleure_action, payoff_attendu, analyse_détaillée)
+        """
+        if not available_actions:
+            raise ValueError("available_actions ne peut pas être vide")
+        
+        best_action = None
+        best_expected_payoff = float('-inf')
+        analysis = {}
+        
+        if verbose:
+            print("\n" + "="*70)
+            print(f"DÉCISION CONTRE ENVIRONNEMENT FIXE: {env_name}")
+            print("="*70)
+            print(f"Nombre d'actions à évaluer: {len(available_actions)}")
+            print(f"Stratégie environnementale: {env_name} (FIXE)")
+        
+        # Pour chaque action pure du drone
+        for drone_action in available_actions:
+            # Calculer le payoff attendu contre la stratégie fixe
+            expected_payoff = self.evaluate_pure_action_vs_mixed_env(
+                drone_action,
+                env_strategy,
+                state_params
+            )
+            
+            # Stocker l'analyse pour cette action
+            analysis[drone_action] = {
+                'expected_payoff': expected_payoff,
+                'env_strategy': env_name
+            }
+            
+            if verbose:
+                print(f"  {drone_action.value:15s}: payoff attendu = {expected_payoff:7.3f}")
+            
+            # Choisir l'action avec le meilleur payoff attendu (maximisation)
+            if expected_payoff > best_expected_payoff:
+                best_expected_payoff = expected_payoff
+                best_action = drone_action
+        
+        if verbose:
+            print("\n" + "-"*70)
+            print(f"MEILLEURE ACTION contre {env_name}")
+            print("-"*70)
+            print(f"Action choisie: {best_action.value}")
+            print(f"Payoff attendu: {best_expected_payoff:.3f}")
+            print("="*70)
+        
+        return best_action, best_expected_payoff, analysis
+    
+    

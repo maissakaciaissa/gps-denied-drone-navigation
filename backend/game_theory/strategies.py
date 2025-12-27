@@ -182,46 +182,6 @@ class DroneStrategies:
         )
     
     @staticmethod
-    def create_directional_strategy(current_pos: Tuple[int, int], goal_pos: Tuple[int, int]) -> MixedStrategy:
-        """
-        Create a directional mixed strategy that adapts to the goal direction.
-        Calculates which direction to favor based on current position and goal.
-        Args:
-            current_pos: Current drone position (x, y)
-            goal_pos: Goal position (x, y)
-        Returns:
-            MixedStrategy adapted to move toward the goal
-            
-        Example:
-            At (2, 2) going to (18, 18):
-            - Need to go RIGHT (x: 2→18) and UP (y: 2→18)
-            - Strategy will favor RIGHT (40%) and UP (40%)
-        """
-        x, y = current_pos
-        gx, gy = goal_pos
-        
-        # Determine which directions we need to go
-        need_right = gx > x  # True if goal is to the right
-        need_up = gy > y     # True if goal is above
-        
-        # Adaptive probabilities based on direction needed
-        # If we need to go RIGHT and UP, prioritize those actions
-        probs = {
-            DroneAction.MOVE_UP: 0.40 if need_up else 0.10,
-            DroneAction.MOVE_DOWN: 0.10 if need_up else 0.40,
-            DroneAction.MOVE_LEFT: 0.05 if need_right else 0.40,
-            DroneAction.MOVE_RIGHT: 0.40 if need_right else 0.05,
-            DroneAction.STAY: 0.0,
-            DroneAction.ROTATE: 0.0
-        }
-        
-        # Normalize to ensure sum = 1.0
-        total = sum(probs.values())
-        probs = {k: v/total for k, v in probs.items()}
-        
-        return DroneStrategies.create_custom_strategy(probs)
-    
-    @staticmethod
     def create_custom_strategy(probabilities: Dict[DroneAction, float]) -> MixedStrategy:
         """
         Create a custom mixed strategy from a probability dictionary.

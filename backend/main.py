@@ -1,15 +1,21 @@
 """
 Main entry point for the Drone Visual Navigation Project
-This demonstrates PART 1: Environment, Strategies, Payoff, and Logger
+Test de l'algorithme Minimax avec stratégies pures (drone) vs stratégies mixtes (environnement)
 """
 
 import numpy as np
 from backend.core.environment import Environment
+from backend.core.drone import Drone
 from backend.game_theory.strategies import (
-    DroneStrategies, EnvironmentStrategies, DroneAction, EnvironmentCondition
+    DroneAction, 
+    EnvironmentCondition,
+    EnvironmentStrategies
 )
 from backend.game_theory.payoff import PayoffFunction
-from backend.simulation.logger import SimulationLogger
+from backend.game_theory.minimax import Minimax
+from backend.game_theory.minimax import Minimax
+from backend.game_theory.strategies import EnvironmentStrategies
+from backend.core.drone import Drone
 
 """Test PART 1: Environment creation and functionality"""
 
@@ -457,7 +463,7 @@ def test_minimax():
     
     # Réinitialiser le drone
     drone2 = Drone(environment=env, battery_capacity=100)
-    max_steps = 100
+    max_steps = 500
     
     print(f"\nNavigation de {max_steps} étapes avec Minimax")
     print(f"Position initiale: {drone2.get_position()}")
@@ -537,7 +543,7 @@ def test_minimax():
     
     # Créer drone avec plus de batterie pour le labyrinthe
     drone_maze = Drone(environment=env_maze, battery_capacity=150)
-    max_steps = 150
+    max_steps = 500
     
     print(f"\nNavigation dans le labyrinthe avec Minimax")
     print(f"Position initiale: {drone_maze.get_position()}")
@@ -606,16 +612,16 @@ def test_minimax():
 
 
 def test_minimax_mixed_strategies():
-    """Test MINIMAX avec STRATÉGIES MIXTES"""
+    """Test MINIMAX avec STRATÉGIES MIXTES pures (sans heuristiques)"""
     print("\n" + "="*70)
     print("TEST: MINIMAX AVEC STRATÉGIES MIXTES")
     print("="*70)
     
     from backend.game_theory.minimax import Minimax
-    from backend.game_theory.strategies import DroneStrategies, EnvironmentStrategies, DroneAction
+    from backend.game_theory.strategies import DroneStrategies, EnvironmentStrategies
     from backend.core.drone import Drone
     
-    # Créer environnement
+    # === CONFIGURATION DE L'ENVIRONNEMENT ===
     env = Environment(width=20, height=20, start_pos=(2, 2), goal_pos=(18, 18))
     obstacles = [
         (5, 2), (5, 3), (5, 4), (5, 5), (5, 6),
@@ -624,27 +630,47 @@ def test_minimax_mixed_strategies():
     ]
     env.add_obstacles(obstacles)
     
-    # Créer drone avec PLUS de batterie pour atteindre l'objectif
-    drone = Drone(environment=env, battery_capacity=150)
+    print(f"\n🗺️  Environnement: {env}")
+    print(f"🎯 Objectif: {env.goal_pos}")
+    print(f"📍 Départ: {env.start_pos}")
+    print(f"🚧 Obstacles: {len(obstacles)} placements")
     
-    # Créer payoff function avec poids OPTIMISÉS pour encourager le progrès
+    # === FONCTION DE PAYOFF (OPTIMISÉE) ===
+    # Augmentation de w1 pour prioriser la mission
+    # Réduction de w3 pour moins de peur des obstacles
+    # Augmentation de stay_penalty pour pénaliser l'immobilité
     payoff_func = PayoffFunction(
-        w1=0.85,  # Plus d'importance sur le progrès vers l'objectif (était 0.7)
-        w2=0.03,  # Moins d'importance sur l'énergie (était 0.05)
-        w3=0.07,  # Moins de peur des obstacles (était 0.15)
-        w4=0.05,  # Moins d'importance sur l'exploration (était 0.1)
-        stay_penalty_factor=0.8  # Plus de pénalité pour rester immobile (était 0.4)
+        w1=0.6,   # Mission success (augmenté de 0.4 → 0.6)
+        w2=0.05,  # Energy (réduit de 0.2 → 0.05)
+        w3=0.15,  # Collision risk (réduit de 0.3 → 0.15)
+        w4=0.2,   # Map quality (augmenté de 0.1 → 0.2)
+        stay_penalty_factor=0.9  # Pénalise fortement l'immobilité
     )
     minimax_solver = Minimax(payoff=payoff_func)
+    print(f"\n⚙️  {payoff_func}")
+    print(f"⚙️  Pénalité STAY: {payoff_func.stay_penalty_factor}")
     
-    # Définir les stratégies mixtes à tester (AJOUT de Goal-Oriented)
+    # === STRATÉGIES MIXTES DRONE (PAR ORDRE D'AGRESSIVITÉ) ===
+    # Créer une stratégie ultra-offensive: 0% STAY/ROTATE, 100% mouvement
+    from backend.game_theory.strategies import DroneAction
+    explorer_strategy = DroneStrategies.create_custom_strategy({
+        DroneAction.MOVE_UP: 0.25,
+        DroneAction.MOVE_DOWN: 0.25,
+        DroneAction.MOVE_LEFT: 0.25,
+        DroneAction.MOVE_RIGHT: 0.25,
+        DroneAction.STAY: 0.0,      # Aucune immobilité
+        DroneAction.ROTATE: 0.0     # Aucune rotation
+    })
+    
     drone_mixed_strategies = [
-        ('Goal-Oriented', DroneStrategies.create_goal_oriented_strategy()),  # NOUVEAU !
-        ('Aggressive', DroneStrategies.create_aggressive_strategy()),
-        ('Balanced', DroneStrategies.create_balanced_strategy()),
-        ('Cautious', DroneStrategies.create_cautious_strategy())
+        ('Explorer', explorer_strategy),            # NOUVEAU: 0% STAY/ROTATE
+        ('Aggressive', DroneStrategies.create_aggressive_strategy()),  # 5% STAY, 5% ROTATE
+        ('Balanced', DroneStrategies.create_balanced_strategy()),      # 15% STAY, 10% ROTATE
+        ('Cautious', DroneStrategies.create_cautious_strategy()),      # 60% STAY, 10% ROTATE
+        ('Uniform', DroneStrategies.create_uniform_mixed_strategy())   # 16.6% chaque
     ]
     
+    # === STRATÉGIES MIXTES ENVIRONNEMENT ===
     env_mixed_strategies = [
         ('Uniform', EnvironmentStrategies.create_uniform_mixed_strategy()),
         ('Typical', EnvironmentStrategies.create_typical_conditions()),
@@ -652,7 +678,22 @@ def test_minimax_mixed_strategies():
         ('Favorable', EnvironmentStrategies.create_favorable_conditions())
     ]
     
-    # État initial
+    print("\n📋 Stratégies mixtes drone:")
+    for name, strategy in drone_mixed_strategies:
+        print(f"   • {name}")
+    
+    print("\n📋 Stratégies mixtes environnement:")
+    for name, strategy in env_mixed_strategies:
+        print(f"   • {name}")
+    
+    # === TEST 1: ÉVALUATION STRATÉGIQUE INITIALE ===
+    print(f"\n{'='*70}")
+    print("TEST 1: Évaluation stratégique à la position initiale")
+    print(f"{'='*70}")
+    
+    # Augmentation de la batterie pour permettre plus de mouvements
+    drone = Drone(environment=env, battery_capacity=250)
+    
     state_params = {
         'current_pos': drone.get_position(),
         'goal_pos': env.goal_pos,
@@ -666,12 +707,11 @@ def test_minimax_mixed_strategies():
         'environment': env
     }
     
-    print(f"\n🗺️  Environnement: {env}")
-    print(f"🎯 Objectif: {env.goal_pos}")
-    print(f"📍 Position initiale: {drone.get_position()}")
-    print(f"🔋 Batterie: {drone.get_battery_level()} unités")
+    print(f"Position: {state_params['current_pos']}")
+    print(f"Distance à l'objectif: {env.distance_to_goal(state_params['current_pos']):.2f}")
+    print(f"Batterie: {drone.get_battery_level()}/{drone.battery_capacity}")
     
-    # Résoudre avec stratégies mixtes
+    # Résoudre avec minimax pour trouver la meilleure stratégie mixte
     best_strategy_name, best_strategy, best_payoff = minimax_solver.solve_mixed_strategy(
         drone_mixed_strategies,
         env_mixed_strategies,
@@ -680,145 +720,329 @@ def test_minimax_mixed_strategies():
     )
     
     print(f"\n{'='*70}")
-    print("RÉSULTAT FINAL")
+    print("RÉSULTAT DE L'ÉVALUATION")
     print(f"{'='*70}")
-    print(f"✅ Meilleure stratégie: {best_strategy_name}")
-    print(f"📊 Payoff garanti: {best_payoff:.3f}")
-    print(f"📋 Distribution de probabilités:")
+    print(f"✅ Meilleure stratégie mixte: {best_strategy_name}")
+    print(f"📊 Payoff garanti (worst-case): {best_payoff:.3f}")
+    print(f"\n📋 Distribution des probabilités:")
     for action, prob in zip(best_strategy.strategies, best_strategy.probabilities):
         if prob > 0:
             print(f"   {action.value:15s}: {prob*100:5.1f}%")
     
-    # Test: Simuler quelques étapes avec la meilleure stratégie
+    # === TEST 2: SIMULATION AVEC STRATÉGIE FIXE ===
     print(f"\n{'='*70}")
-    print("SIMULATION AVEC LA MEILLEURE STRATÉGIE MIXTE")
+    print("TEST 2: Navigation avec stratégie mixte FIXE")
     print(f"{'='*70}")
+    print(f"On utilise '{best_strategy_name}' du début à la fin\n")
     
-    for step in range(100):
-        current_pos = drone.get_position()
-        
-        # Échantillonner une action de la stratégie mixte
-        action = best_strategy.sample()
-        
-        # Vérifier si l'action est valide
-        valid_actions = drone.get_valid_actions()
-        if action not in valid_actions:
-            # Si l'action échantillonnée n'est pas valide, en choisir une valide
-            action = valid_actions[0] if valid_actions else None
-        
-        if action is None:
-            print("❌ Aucune action valide!")
-            break
-        
-        # Exécuter
-        success = drone.move(action)
-        
-        distance = env.distance_to_goal(drone.get_position())
-        print(f"Étape {step+1:2d}: {action.value:15s} → {drone.get_position()} | "
-              f"Dist: {distance:5.2f} | Batt: {drone.get_battery_percentage():5.1f}%")
-        
-        if env.is_goal_reached(drone.get_position()):
-            print(f"\n🎯 Objectif atteint!")
-            break
-    
-    # Test: Simuler avec réévaluation à chaque étape
-    print(f"\n{'='*70}")
-    print("SIMULATION INTELLIGENTE (Réévaluation continue)")
-    print(f"{'='*70}")
-    
-    # Réinitialiser le drone avec PLUS de batterie
-    drone2 = Drone(environment=env, battery_capacity=150)
-    max_steps = 150
+    drone_fixed = Drone(environment=env, battery_capacity=250)
+    max_steps = 500
     
     for step in range(max_steps):
-        current_pos = drone2.get_position()
+        # Échantillonner une action depuis la stratégie mixte
+        action = best_strategy.sample()
         
-        # IMPORTANT: Mettre à jour les state_params à chaque étape
+        # Vérifier la validité
+        valid_actions = drone_fixed.get_valid_actions()
+        if not valid_actions:
+            print(f"\n❌ Plus d'actions valides à l'étape {step+1}")
+            break
+        
+        # Si l'action échantillonnée n'est pas valide, prendre une action valide
+        if action not in valid_actions:
+            action = valid_actions[0]
+        
+        # Exécuter l'action
+        drone_fixed.move(action)
+        
+        distance = env.distance_to_goal(drone_fixed.get_position())
+        print(f"Étape {step+1:2d}: {action.value:15s} → {drone_fixed.get_position()} | "
+              f"Dist: {distance:5.2f} | Batt: {drone_fixed.get_battery_percentage():5.1f}%")
+        
+        # Vérifier si objectif atteint
+        if env.is_goal_reached(drone_fixed.get_position()):
+            print(f"\n🎯 Objectif atteint en {step+1} étapes!")
+            break
+    else:
+        print(f"\n⚠️ Limite de {max_steps} étapes atteinte")
+    
+    print(f"\n📊 Résultat final:")
+    print(f"   Position: {drone_fixed.get_position()}")
+    print(f"   Distance à l'objectif: {env.distance_to_goal(drone_fixed.get_position()):.2f}")
+    print(f"   Batterie: {drone_fixed.get_battery_percentage():.1f}%")
+    
+    # === TEST 3: SIMULATION AVEC RÉÉVALUATION ===
+    print(f"\n{'='*70}")
+    print("TEST 3: Navigation avec RÉÉVALUATION à chaque étape")
+    print(f"{'='*70}")
+    print("Minimax choisit la meilleure stratégie mixte à chaque position\n")
+    
+    drone_adaptive = Drone(environment=env, battery_capacity=250)
+    max_steps = 500
+    
+    for step in range(max_steps):
+        # Mettre à jour les paramètres d'état
         state_params_updated = {
-            'current_pos': drone2.get_position(),
+            'current_pos': drone_adaptive.get_position(),
             'goal_pos': env.goal_pos,
             'initial_distance': env.distance_to_goal(env.start_pos),
-            'battery_used': drone2.battery_capacity - drone2.get_battery_level(),
-            'total_battery': drone2.battery_capacity,
-            'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone2.get_position()),
-            'explored_cells': len(drone2.explored_cells),
+            'battery_used': drone_adaptive.battery_capacity - drone_adaptive.get_battery_level(),
+            'total_battery': drone_adaptive.battery_capacity,
+            'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone_adaptive.get_position()),
+            'explored_cells': len(drone_adaptive.explored_cells),
             'total_cells': env.width * env.height,
             'collision': False,
             'environment': env
         }
         
-        # NOUVEAU : Créer une stratégie directionnelle adaptée à la position actuelle
-        directional_strategy = DroneStrategies.create_directional_strategy(
-            drone2.get_position(), 
-            env.goal_pos
-        )
-        
-        # Inclure la stratégie directionnelle dans les options à évaluer
-        drone_strategies_adaptive = [
-            ('Directional', directional_strategy),  # Stratégie adaptée à la position !
-            ('Goal-Oriented', DroneStrategies.create_goal_oriented_strategy()),
-            ('Aggressive', DroneStrategies.create_aggressive_strategy())
-        ]
-        
-        # Réévaluer les stratégies à chaque étape
-        best_strategy_name_updated, best_strategy_updated, best_payoff_updated = minimax_solver.solve_mixed_strategy(
-            drone_strategies_adaptive,  # Utiliser les stratégies adaptatives
+        # Réévaluer les stratégies à la position actuelle
+        strategy_name, strategy, payoff = minimax_solver.solve_mixed_strategy(
+            drone_mixed_strategies,
             env_mixed_strategies,
             state_params_updated,
-            verbose=False  # Pas besoin d'afficher à chaque fois
+            verbose=False
         )
         
-        # Échantillonner depuis la NOUVELLE meilleure stratégie
-        action = best_strategy_updated.sample()
+        # Échantillonner une action
+        action = strategy.sample()
         
         # Vérifier validité
-        valid_actions = drone2.get_valid_actions()
-        
-        # Vérifier si on a des actions valides disponibles
+        valid_actions = drone_adaptive.get_valid_actions()
         if not valid_actions:
-            print(f"\n Batterie épuisée à l'étape {step+1}!")
-            print(f"Position finale: {drone2.get_position()}")
-            print(f"Distance finale: {env.distance_to_goal(drone2.get_position()):.2f}")
-            print(f"Batterie restante: {drone2.get_battery_percentage():.1f}%")
+            print(f"\n❌ Plus d'actions valides à l'étape {step+1}")
             break
         
         if action not in valid_actions:
-            # Choisir l'action avec la plus haute probabilité parmi les valides
+            # Choisir l'action valide avec la plus haute probabilité
             best_prob = 0
-            best_valid_action = None
-            for i, (strat_action, prob) in enumerate(zip(best_strategy_updated.strategies, best_strategy_updated.probabilities)):
-                if strat_action in valid_actions and prob > best_prob:
+            best_action = valid_actions[0]
+            for act, prob in zip(strategy.strategies, strategy.probabilities):
+                if act in valid_actions and prob > best_prob:
                     best_prob = prob
-                    best_valid_action = strat_action
-            action = best_valid_action if best_valid_action else None
-        
-        if action is None:
-            print(f"\n Aucune action valide disponible!")
-            break
+                    best_action = act
+            action = best_action
         
         # Exécuter
-        success = drone2.move(action)
+        drone_adaptive.move(action)
         
-        distance = env.distance_to_goal(drone2.get_position())
-        print(f"Étape {step+1:2d}: {action.value:15s} → {drone2.get_position()} | "
-              f"Dist: {distance:5.2f} | Batt: {drone2.get_battery_percentage():5.1f}% | "
-              f"Stratégie: {best_strategy_name_updated}")
+        distance = env.distance_to_goal(drone_adaptive.get_position())
+        print(f"Étape {step+1:2d}: {action.value:15s} → {drone_adaptive.get_position()} | "
+              f"Dist: {distance:5.2f} | Batt: {drone_adaptive.get_battery_percentage():5.1f}% | "
+              f"Stratégie: {strategy_name}")
         
-        # Vérifier objectif
-        if env.is_goal_reached(drone2.get_position()):
+        if env.is_goal_reached(drone_adaptive.get_position()):
             print(f"\n🎯 Objectif atteint en {step+1} étapes!")
-            print(f"📊 Batterie consommée: {drone2.battery_capacity - drone2.get_battery_level()}/{drone2.battery_capacity}")
-            print(f"📊 Batterie restante: {drone2.get_battery_percentage():.1f}%")
+            print(f"📊 Batterie consommée: {drone_adaptive.battery_capacity - drone_adaptive.get_battery_level()}/{drone_adaptive.battery_capacity}")
             break
     else:
-        print(f"\n⚠️ Limite de {max_steps} étapes atteinte sans atteindre l'objectif")
-        print(f"Position finale: {drone2.get_position()}")
-        print(f"Distance finale: {env.distance_to_goal(drone2.get_position()):.2f}")
+        print(f"\n⚠️ Limite de {max_steps} étapes atteinte")
+    
+    print(f"\n📊 Résultat final:")
+    print(f"   Position: {drone_adaptive.get_position()}")
+    print(f"   Distance à l'objectif: {env.distance_to_goal(drone_adaptive.get_position()):.2f}")
+    print(f"   Batterie: {drone_adaptive.get_battery_percentage():.1f}%")
     
     print("\n" + "="*70)
     print("✅ TEST MINIMAX STRATÉGIES MIXTES TERMINÉ")
     print("="*70)
 
+
+
+def test_minimax_fixed_env_strategy():
+    """Test MINIMAX avec environnement FIXE prédéfini"""
+    print("\n" + "="*70)
+    print("TEST: MINIMAX - Navigation avec environnement FIXE")
+    print("="*70)
+    print("Scénario: L'environnement suit TOUJOURS la distribution 'Typical'")
+    print("="*70)
+    
+
+    
+    # === CONFIGURATION ===
+    env = Environment(width=20, height=20, start_pos=(2, 2), goal_pos=(18, 18))
+    obstacles = [
+        (5, 2), (5, 3), (5, 4), (5, 5), (5, 6),
+        (10, 8), (11, 8), (12, 8), (13, 8),
+        (15, 5), (15, 6), (15, 7)
+    ]
+    env.add_obstacles(obstacles)
+    
+    print(f"\n🗺️  Environnement: {env}")
+    print(f"🎯 Objectif: {env.goal_pos}")
+    print(f"📍 Départ: {env.start_pos}")
+    print(f"🚧 Obstacles: {len(obstacles)} placements")
+    
+    # Payoff function
+    payoff_func = PayoffFunction(
+        w1=0.6,   # Mission success
+        w2=0.05,  # Energy
+        w3=0.15,  # Collision risk
+        w4=0.2,   # Map quality
+        stay_penalty_factor=0.9
+    )
+    minimax_solver = Minimax(payoff=payoff_func)
+    
+    print(f"\n⚙️  {payoff_func}")
+    print(f"⚙️  Pénalité STAY: {payoff_func.stay_penalty_factor}")
+    
+    # === ENVIRONNEMENT FIXE PRÉDÉFINI ===
+    print(f"\n{'='*70}")
+    print("ENVIRONNEMENT FIXE UTILISÉ")
+    print(f"{'='*70}")
+
+    prob_dict = {
+        EnvironmentCondition.CLEAR_PATH: 0.1,
+        EnvironmentCondition.OBSTACLE_AHEAD: 0.3,
+        EnvironmentCondition.LOW_VISIBILITY: 0.4,
+        EnvironmentCondition.SENSOR_NOISE: 0.1,
+        EnvironmentCondition.LIGHTING_CHANGE: 0.1,
+    }
+    
+    # Définir l'environnement fixe (ex: conditions typiques)
+    fixed_env_strategy = EnvironmentStrategies.create_custom_strategy(prob_dict)
+    fixed_env_name = 'Custom'
+    
+    print(f"\n📋 Distribution '{fixed_env_name}':")
+    for condition, prob in zip(fixed_env_strategy.strategies, fixed_env_strategy.probabilities):
+        print(f"   {condition.value:20s}: {prob*100:5.1f}%")
+    
+    # === NAVIGATION COMPLÈTE ===
+    print(f"\n{'='*70}")
+    print("NAVIGATION AVEC MINIMAX")
+    print(f"{'='*70}")
+    print(f"À chaque étape, minimax choisit l'action optimale contre '{fixed_env_name}'\n")
+    
+    drone_nav = Drone(environment=env, battery_capacity=250)
+    max_steps = 100
+    
+    trajectory = []
+    actions_taken = []
+    payoffs_history = []
+    
+    for step in range(max_steps):
+        current_pos = drone_nav.get_position()
+        trajectory.append(current_pos)
+        
+        # Mettre à jour state_params
+        state_params_nav = {
+            'current_pos': current_pos,
+            'goal_pos': env.goal_pos,
+            'initial_distance': env.distance_to_goal(env.start_pos),
+            'battery_used': drone_nav.battery_capacity - drone_nav.get_battery_level(),
+            'total_battery': drone_nav.battery_capacity,
+            'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(current_pos),
+            'explored_cells': len(drone_nav.explored_cells),
+            'total_cells': env.width * env.height,
+            'collision': False,
+            'environment': env
+        }
+        
+        # Actions valides
+        valid_actions = drone_nav.get_valid_actions()
+        if not valid_actions:
+            print(f"\n❌ Plus d'actions valides à l'étape {step+1}")
+            break
+        
+        # Décision avec minimax contre environnement fixe
+        action, expected_payoff, analysis = minimax_solver.minimax_pure_vs_fixed_env(
+            valid_actions,
+            fixed_env_strategy,
+            fixed_env_name,
+            state_params_nav,
+            verbose=False
+        )
+        
+        actions_taken.append(action)
+        payoffs_history.append(expected_payoff)
+        
+        # Exécuter l'action
+        success = drone_nav.move(action)
+        
+        distance = env.distance_to_goal(drone_nav.get_position())
+        
+        # Afficher tous les 5 pas
+        if (step + 1) % 5 == 0:
+            print(f"Étape {step+1:3d}: {action.value:15s} → {drone_nav.get_position()} | "
+                  f"Dist: {distance:5.2f} | Batt: {drone_nav.get_battery_percentage():5.1f}% | "
+                  f"Payoff: {expected_payoff:6.2f}")
+        
+        # Vérifier objectif
+        if env.is_goal_reached(drone_nav.get_position()):
+            print(f"\n🎯 Objectif atteint en {step+1} étapes!")
+            print(f"\n📊 STATISTIQUES FINALES:")
+            print(f"   ✅ Succès: Objectif atteint")
+            print(f"   📏 Étapes totales: {step+1}")
+            print(f"   🔋 Batterie consommée: {drone_nav.battery_capacity - drone_nav.get_battery_level()}/{drone_nav.battery_capacity}")
+            print(f"   🔋 Batterie restante: {drone_nav.get_battery_percentage():.1f}%")
+            print(f"   🗺️  Cellules explorées: {len(drone_nav.explored_cells)}/{env.width * env.height}")
+            print(f"   📈 Payoff moyen: {sum(payoffs_history)/len(payoffs_history):.3f}")
+            print(f"   📉 Payoff minimum: {min(payoffs_history):.3f}")
+            print(f"   📈 Payoff maximum: {max(payoffs_history):.3f}")
+            
+            # Afficher distribution des actions prises
+            print(f"\n📊 DISTRIBUTION DES ACTIONS:")
+            from collections import Counter
+            action_counts = Counter([a.value for a in actions_taken])
+            for action_name, count in action_counts.most_common():
+                percentage = (count / len(actions_taken)) * 100
+                print(f"   {action_name:15s}: {count:3d} fois ({percentage:5.1f}%)")
+            
+            break
+    else:
+        print(f"\n⚠️ Limite de {max_steps} étapes atteinte")
+        print(f"\n📊 STATISTIQUES FINALES:")
+        print(f"   ⚠️  Objectif NON atteint")
+        print(f"   📍 Position finale: {drone_nav.get_position()}")
+        print(f"   📏 Distance restante: {env.distance_to_goal(drone_nav.get_position()):.2f}")
+        print(f"   🔋 Batterie: {drone_nav.get_battery_percentage():.1f}%")
+    
+    # === ANALYSE DÉTAILLÉE D'UNE ÉTAPE ===
+    print(f"\n{'='*70}")
+    print("ANALYSE DÉTAILLÉE D'UNE DÉCISION")
+    print(f"{'='*70}")
+    print("Regardons en détail comment minimax choisit une action\n")
+    
+    # Retour à la position initiale pour analyse
+    drone_analysis = Drone(environment=env, battery_capacity=250)
+    
+    state_params_analysis = {
+        'current_pos': drone_analysis.get_position(),
+        'goal_pos': env.goal_pos,
+        'initial_distance': env.distance_to_goal(env.start_pos),
+        'battery_used': 0,
+        'total_battery': drone_analysis.battery_capacity,
+        'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(drone_analysis.get_position()),
+        'explored_cells': len(drone_analysis.explored_cells),
+        'total_cells': env.width * env.height,
+        'collision': False,
+        'environment': env
+    }
+    
+    valid_actions = drone_analysis.get_valid_actions()
+    
+    # Décision avec verbose
+    best_action, expected_payoff, analysis = minimax_solver.minimax_pure_vs_fixed_env(
+        valid_actions,
+        fixed_env_strategy,
+        fixed_env_name,
+        state_params_analysis,
+        verbose=True
+    )
+    
+    # Afficher l'analyse détaillée de chaque action
+    print(f"\n📋 DÉTAIL DES PAYOFFS ATTENDUS PAR ACTION:")
+    print(f"{'-'*70}")
+    print(f"{'Action':<15} {'Payoff Attendu':>20}")
+    print(f"{'-'*70}")
+    
+    sorted_analysis = sorted(analysis.items(), key=lambda x: x[1]['expected_payoff'], reverse=True)
+    for action, data in sorted_analysis:
+        marker = "✅" if action == best_action else "  "
+        print(f"{marker} {action.value:<15} {data['expected_payoff']:>20.3f}")
+    
+    print("\n" + "="*70)
+    print("✅ TEST MINIMAX vs ENVIRONNEMENT FIXE TERMINÉ")
+    print("="*70)
 
 # Dans main()
 def main():
@@ -835,8 +1059,16 @@ def main():
     # Test Minimax avec stratégies pures
     # test_minimax()
     
-    # NOUVEAU: Test Minimax avec stratégies mixtes
-    test_minimax_mixed_strategies()
+    # Test Minimax avec stratégies mixtes
+    # test_minimax_mixed_strategies()
+    
+    # test_minimax_pure_vs_mixed()
+    
+    # Test avec environnement FIXE (une seule distribution)
+    # test_minimax_fixed_env_strategy()
+    
+    test_minimax_fixed_env_strategy()
+
     
     print("\n" + "=" * 70)
     print(" TOUS LES TESTS TERMINÉS")

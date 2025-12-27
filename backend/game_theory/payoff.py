@@ -277,28 +277,32 @@ class PayoffFunction:
             new_pos, goal_pos, initial_distance, action_collision, environment
         )
         
-        # Penalize moving away from goal (but don't penalize STAY/ROTATE)
-        if moving_away_from_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
-                                                       DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
-            mission_success -= 3.0  # flat penalty for actively moving away from goal
+        # Calculer la distance normalisée AVANT tous les blocs (utilisée dans plusieurs conditions)
+        distance_ratio = new_dist_to_goal / initial_distance if initial_distance > 0 else 0
         
+        # Pénaliser FORTEMENT l'immobilité quand on est loin de l'objectif
         if self.penalize_stay and drone_action in [DroneAction.STAY, DroneAction.ROTATE]:
             if new_pos != goal_pos:
-                # Calculer la distance normalisée (0 = objectif, 1 = très loin)
-                distance_ratio = new_dist_to_goal / initial_distance if initial_distance > 0 else 0
-                # Pénalité progressive : plus on est loin, plus c'est pénalisé
-                # À l'objectif (ratio=0) : pas de pénalité
-                # Très loin (ratio=1) : pénalité maximale (stay_penalty_factor)    
-                stay_penalty = distance_ratio * self.stay_penalty_factor
-                mission_success -= stay_penalty 
-
-        # BONUS pour se rapprocher de l'objectif
+                # Pénalité DRAMATIQUE : échelle de 0 à 3.0
+                stay_penalty = distance_ratio * self.stay_penalty_factor * 3.0  # Multiplié par 3!
+                mission_success -= stay_penalty
+        
+        # BONUS MASSIF pour se rapprocher de l'objectif
         if moving_toward_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
                                                     DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
             # Bonus proportionnel au progrès
             progress = (current_dist_to_goal - new_dist_to_goal) / initial_distance
-            approach_bonus = progress * 0.5  # Bonus jusqu'à 0.5
-            mission_success += approach_bonus           
+            # AUGMENTATION MASSIVE: 0.5 → 10.0 (x20)
+            # Plus on est proche, plus le bonus est élevé (facteur d'urgence)
+            urgency_factor = 1.0 + (1.0 - distance_ratio)  # 1.0 (loin) à 2.0 (proche)
+            approach_bonus = progress * 10.0 * urgency_factor  # Bonus jusqu'à 20.0!
+            mission_success += approach_bonus
+        
+        # Pénaliser MOINS s'éloigner (permet exploration)
+        if moving_away_from_goal and drone_action in [DroneAction.MOVE_UP, DroneAction.MOVE_DOWN,
+                                                       DroneAction.MOVE_LEFT, DroneAction.MOVE_RIGHT]:
+            # Réduction: 3.0 → 0.5 (x6 moins sévère)
+            mission_success -= 0.5  # Pénalité modérée           
 
         energy_consumed = self.calculate_energy_consumed(
             new_battery_used, total_battery
