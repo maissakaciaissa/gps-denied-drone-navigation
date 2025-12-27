@@ -134,7 +134,7 @@ class BayesianGameSolver:
             return EnvironmentStrategies.create_uniform_mixed_strategy()
     
     def calculate_likelihood(self, 
-        action: DroneAction, observed_condition: EnvironmentCondition, env_type: str
+        observed_condition: EnvironmentCondition, env_type: str
     ) -> float:
         """
         Calculate P(observation | environment_type) - the likelihood.
@@ -143,7 +143,6 @@ class BayesianGameSolver:
         condition given that the environment is of a specific type.
         
         Args:
-            action: The action the drone took
             observed_condition: The environmental condition that was observed
             env_type: The hypothesized environment type
             
@@ -201,7 +200,7 @@ class BayesianGameSolver:
             prior = self.beliefs[env_type]
             
             # Likelihood: P(observation | env_type)
-            likelihood = self.calculate_likelihood(action, observed_condition, env_type)
+            likelihood = self.calculate_likelihood(observed_condition, env_type)
             
             # Posterior (unnormalized): P(env_type | observation) ∝ P(observation | env_type) × P(env_type)
             posterior[env_type] = likelihood * prior
@@ -363,22 +362,106 @@ class BayesianGameSolver:
         
         return selected_action, selected_utility, analysis
     
+    def update_beliefs_from_sensor(self, sensor_distribution: Dict[EnvironmentCondition, float]) -> Dict[str, float]:
+        """
+        Update beliefs about environment TYPE using sensor's probability distribution over CONDITIONS.
+        
+        The sensor provides readings which reflect its uncertainty due to fog, darkness, etc.
+        We use this to infer which environment TYPE we're likely in.
+        
+        Logic:
+        - High OBSTACLE_AHEAD probability → Evidence for ADVERSARIAL environment
+        - High CLEAR_PATH probability → Evidence for FAVORABLE environment
+        - Mixed/uncertain readings → Evidence for NEUTRAL environment
+        
+        Args:
+            sensor_distribution: Dictionary mapping conditions to probabilities from sensor
+            
+        Returns:
+            Updated belief distribution over environment types
+            
+        Example:
+            Sensor: {OBSTACLE_AHEAD: 0.6, CLEAR_PATH: 0.4}
+            Before: {adversarial: 0.33, neutral: 0.33, favorable: 0.33}
+            After: {adversarial: 0.55, neutral: 0.30, favorable: 0.15}
+        """
+        if not self.beliefs:
+            self.initialize_beliefs()
+        
+        # Calculate likelihood of this sensor reading for each environment type
+        posterior = {}
+        
+        for env_type in EnvironmentType.get_all_types():
+            # Prior: P(env_type)
+            prior = self.beliefs[env_type]
+            
+            # Likelihood: How well does sensor reading match this env type?
+            # Sum over all conditions weighted by sensor probability
+            likelihood = 0.0
+            
+            for condition, sensor_prob in sensor_distribution.items():
+                # Use calculate_likelihood to get P(condition | env_type)
+                condition_likelihood = self.calculate_likelihood(condition, env_type)
+                
+                # Weight by sensor confidence: higher sensor_prob = stronger evidence
+                likelihood += sensor_prob * condition_likelihood
+            
+            # Posterior (unnormalized): P(env_type | sensor_reading)
+            posterior[env_type] = likelihood * prior
+        
+        # Normalize
+        total = sum(posterior.values())
+        
+        if total > 0:
+            for env_type in posterior:
+                posterior[env_type] /= total
+        else:
+            # Keep previous beliefs if update fails
+            posterior = self.beliefs.copy()
+        
+        # Update stored beliefs
+        self.beliefs = posterior
+        
+        return self.beliefs.copy()
+    
     def solve(self,
         available_actions: List[DroneAction], state_params: Dict, verbose: bool = False
     ) -> DroneAction:
         """
         Main interface for Bayesian decision-making.
         
-        This is the simple wrapper that external code should call.
+        If sensor is available, uses its probability distribution to update beliefs about
+        environment type.
         
         Args:
             available_actions: List of valid drone actions
             state_params: Current state parameters
+                         Can include 'sensor' key with DroneSensor instance
             verbose: If True, print analysis
             
         Returns:
             Recommended drone action
         """
+        # Check if sensor is available to get probability distribution over conditions
+        sensor = state_params.get('sensor')
+        if sensor is not None and state_params.get('environment') is not None:
+            try:
+                # Sensor returns uncertain readings
+                sensor_distribution = sensor.sense_environment_condition(
+                    state_params['environment'],
+                    state_params['current_pos']
+                )
+                
+                if sensor_distribution:
+                    # Use sensor's uncertain readings to update beliefs about environment TYPE
+                    # High obstacle readings → more belief in adversarial environment
+                    # High clear path readings → more belief in favorable environment
+                    self.update_beliefs_from_sensor(sensor_distribution)
+                    
+            except:
+                # If sensor fails, proceed without it
+                pass
+        
         action, _, _ = self.bayesian_decision(available_actions, state_params, verbose)
         return action
     

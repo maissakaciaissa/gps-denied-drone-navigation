@@ -182,9 +182,10 @@ class DroneSensor:
         
         return observable_cells
     
-    def sense_environment_condition(self, environment: Environment, drone_position: Tuple[int, int]) -> EnvironmentCondition:
+    def sense_environment_condition(self, environment: Environment, drone_position: Tuple[int, int]) -> Dict[EnvironmentCondition, float]:
         """
         Determine the current environment condition based on sensor readings.
+        Returns a probability distribution (mixed strategy) over possible conditions.
         
         The sensor detects obstacles and determines conditions based on:
         - Proximity to obstacles
@@ -196,7 +197,8 @@ class DroneSensor:
             drone_position: Current (x, y) position of the drone
         
         Returns:
-            EnvironmentCondition enum value
+            Dictionary mapping EnvironmentCondition to probability (0.0 to 1.0)
+            Probabilities sum to 1.0. Example: {CLEAR_PATH: 0.7, LOW_VISIBILITY: 0.3}
         """
         import random
         
@@ -207,48 +209,108 @@ class DroneSensor:
         close_obstacles = [dist for dist in obstacles_by_direction.values() if dist is not None and dist <= 2]
         
         if close_obstacles:
-            # Obstacle is very close - primary concern
-            return EnvironmentCondition.OBSTACLE_AHEAD
+            # Obstacle is ahead
+            return {
+                EnvironmentCondition.OBSTACLE_AHEAD: 1.0,
+            }
         
         # Get visible obstacles in sensor range
         visible_obstacles = self.scan_environment(environment, drone_position)
         
-        # Introduce some randomness to simulate real-world sensor variability
-        # with weighted probabilities based on environment state
-        rand_val = random.random()
+        # Calculate obstacle density in observable region
+        observable_region = self.get_observable_region(environment, drone_position)
+        obstacle_density = len(visible_obstacles) / max(len(observable_region), 1)
         
-        if len(visible_obstacles) > 3:
-            # Many obstacles visible - more likely to have sensor noise or visibility issues
-            if rand_val < 0.3:
-                return EnvironmentCondition.SENSOR_NOISE
-            elif rand_val < 0.5:
-                return EnvironmentCondition.LOW_VISIBILITY
-            elif rand_val < 0.7:
-                return EnvironmentCondition.LIGHTING_CHANGE
+        if len(visible_obstacles) > 5:
+            # Very dense obstacle environment - sensor struggles with complex scenes
+            if self.visibility < 0.5:
+                # Poor visibility + dense obstacles = extreme uncertainty
+                return {
+                    EnvironmentCondition.OBSTACLE_AHEAD: 0.40,
+                    EnvironmentCondition.LOW_VISIBILITY: 0.30,
+                    EnvironmentCondition.SENSOR_NOISE: 0.15,
+                    EnvironmentCondition.CLEAR_PATH: 0.15
+                }
+            elif self.visibility < 0.8:
+                # Moderate visibility + dense obstacles
+                return {
+                    EnvironmentCondition.OBSTACLE_AHEAD: 0.55,
+                    EnvironmentCondition.LOW_VISIBILITY: 0.25,
+                    EnvironmentCondition.SENSOR_NOISE: 0.10,
+                    EnvironmentCondition.CLEAR_PATH: 0.10
+                }
             else:
-                return EnvironmentCondition.CLEAR_PATH
+                # Good visibility but dense obstacles
+                return {
+                    EnvironmentCondition.OBSTACLE_AHEAD: 0.60,
+                    EnvironmentCondition.CLEAR_PATH: 0.35,
+                    EnvironmentCondition.LIGHTING_CHANGE: 0.05,
+                }
         
-        elif len(visible_obstacles) > 0:
-            # Some obstacles visible - moderate conditions
-            if rand_val < 0.2:
-                return EnvironmentCondition.SENSOR_NOISE
-            elif rand_val < 0.3:
-                return EnvironmentCondition.LOW_VISIBILITY
-            elif rand_val < 0.4:
-                return EnvironmentCondition.LIGHTING_CHANGE
+        elif obstacle_density > 0.3 or len(visible_obstacles) > 2:
+            # Moderate obstacle density
+            if self.visibility < 0.5:
+                # Poor visibility with moderate obstacles
+                return {
+                    EnvironmentCondition.LOW_VISIBILITY: 0.40,
+                    EnvironmentCondition.OBSTACLE_AHEAD: 0.30,
+                    EnvironmentCondition.CLEAR_PATH: 0.20,
+                    EnvironmentCondition.SENSOR_NOISE: 0.10
+                }
+            elif self.visibility < 0.8:
+                # Moderate visibility with moderate obstacles
+                return {
+                    EnvironmentCondition.OBSTACLE_AHEAD: 0.35,
+                    EnvironmentCondition.CLEAR_PATH: 0.45,
+                    EnvironmentCondition.LOW_VISIBILITY: 0.15,
+                    EnvironmentCondition.SENSOR_NOISE: 0.05
+                }
             else:
-                return EnvironmentCondition.CLEAR_PATH
+                # Good visibility with moderate obstacles
+                return {
+                    EnvironmentCondition.OBSTACLE_AHEAD: 0.45,
+                    EnvironmentCondition.CLEAR_PATH: 0.40,
+                    EnvironmentCondition.LIGHTING_CHANGE: 0.15
+                }
+        
+        elif len(visible_obstacles) == 1:
+            # Single obstacle - confidence depends on visibility
+            if self.visibility < 0.6:
+                # Poor visibility - uncertain if obstacle or sensor issue
+                return {
+                    EnvironmentCondition.LOW_VISIBILITY: 0.40,
+                    EnvironmentCondition.OBSTACLE_AHEAD: 0.35,
+                    EnvironmentCondition.SENSOR_NOISE: 0.25
+                }
+            else:
+                # Good visibility - more confident about single obstacle
+                return {
+                    EnvironmentCondition.OBSTACLE_AHEAD: 0.65,
+                    EnvironmentCondition.CLEAR_PATH: 0.30,
+                    EnvironmentCondition.LIGHTING_CHANGE: 0.05
+                }
         
         else:
-            # No obstacles nearby - mostly clear conditions
-            if rand_val < 0.1:
-                return EnvironmentCondition.SENSOR_NOISE
-            elif rand_val < 0.15:
-                return EnvironmentCondition.LOW_VISIBILITY
-            elif rand_val < 0.2:
-                return EnvironmentCondition.LIGHTING_CHANGE
+            # No obstacles nearby
+            if self.visibility < 0.5:
+                # Can't see obstacles but poor visibility - uncertainty remains
+                return {
+                    EnvironmentCondition.LOW_VISIBILITY: 0.55,
+                    EnvironmentCondition.CLEAR_PATH: 0.30,
+                    EnvironmentCondition.SENSOR_NOISE: 0.15
+                }
+            elif self.visibility < 0.8:
+                # Moderate visibility, no obstacles detected
+                return {
+                    EnvironmentCondition.CLEAR_PATH: 0.75,
+                    EnvironmentCondition.LOW_VISIBILITY: 0.15,
+                    EnvironmentCondition.SENSOR_NOISE: 0.10
+                }
             else:
-                return EnvironmentCondition.CLEAR_PATH
+                # Good visibility, no obstacles - pure strategy (high confidence)
+                return {
+                    EnvironmentCondition.CLEAR_PATH: 1.0
+                }
     
     def get_sensor_info(self) -> Dict:
         """

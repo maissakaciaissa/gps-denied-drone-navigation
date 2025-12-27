@@ -505,10 +505,13 @@ class NashEquilibriumSolver:
         """
         Solve for Nash equilibrium and return a recommended action.
         
-        Applies boundary avoidance and invalid move detection.
+        If sensor is available in state_params, uses detected condition via information
+        revelation - reduces the game to only the sensed environment condition. This is
+        the academically correct approach: perfect information about environment state.
         
         Args:
             state_params: Current state parameters for payoff calculation
+                         Can include 'sensor' key with DroneSensor instance
             drone_actions: List of available drone actions (default: all actions)
             env_conditions: List of possible environment conditions (default: all conditions)
             
@@ -521,14 +524,34 @@ class NashEquilibriumSolver:
         if env_conditions is None:
             env_conditions = EnvironmentStrategies.get_all_pure_strategies()
         
-        # Generate payoff matrices
+        # Check if sensor is available to get probability distribution over conditions
+        sensor_beliefs = None
+        sensor = state_params.get('sensor')
+        if sensor is not None and state_params.get('environment') is not None:
+            try:
+                sensor_beliefs = sensor.sense_environment_condition(
+                    state_params['environment'],
+                    state_params['current_pos']
+                )
+            except:
+                # If sensor fails, proceed without it
+                sensor_beliefs = None
+        
+        # If sensor provided beliefs, filter environment conditions to those with non-zero probability
+        # This represents the mixed strategy of the environment from sensor's perspective
+        env_conditions_to_use = env_conditions
+        if sensor_beliefs is not None:
+            # Only consider conditions that sensor thinks are possible (probability > 0)
+            env_conditions_to_use = [cond for cond in env_conditions if sensor_beliefs.get(cond, 0.0) > 0.0]
+        
+        # Generate payoff matrices (only for relevant environment conditions)
         drone_matrix, env_matrix = self.payoff_function.generate_payoff_matrix(
-            drone_actions, env_conditions, state_params
+            drone_actions, env_conditions_to_use, state_params
         )
         
         # Find Nash equilibrium
         nash_drone, nash_env = self.find_nash_equilibrium(
-            drone_matrix, env_matrix, drone_actions, env_conditions
+            drone_matrix, env_matrix, drone_actions, env_conditions_to_use
         )
         
         # Sample action from Nash equilibrium strategy
