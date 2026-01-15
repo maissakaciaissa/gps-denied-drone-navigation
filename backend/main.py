@@ -606,6 +606,78 @@ def test_minimax():
         print(f"Position finale: {drone_maze.get_position()}")
         print(f"Distance à l'objectif: {env_maze.distance_to_goal(drone_maze.get_position()):.2f}")
     
+    # 10. Test 7: NOUVEAU TEST - Capteurs du drone
+    print("\n" + "-" * 70)
+    print("TEST 7: Navigation avec Capteurs du Drone")
+    print("-" * 70)
+    
+    # Réinitialiser le drone
+    drone_maze = Drone(environment=env_maze, battery_capacity=150)
+    sensor = DroneSensor(detection_range=5, initial_visibility=1.0)
+    
+    max_steps = 500
+    trajectory = []
+    
+    print("\n🚁 DÉBUT DE LA NAVIGATION AVEC CAPTEURS\n")
+    
+    for step in range(max_steps):
+        current_pos = drone_maze.get_position()
+        trajectory.append(current_pos)
+        
+        # 🔍 CAPTEURS: Détecter la distribution
+        sensor_distribution = sensor.sense_environment_condition(env_maze, current_pos)
+        
+        # Mettre à jour la visibilité
+        most_likely_condition = max(sensor_distribution.items(), key=lambda x: x[1])[0]
+        sensor.update_visibility(most_likely_condition)
+        
+        # Préparer l'état
+        state_params = {
+            'current_pos': current_pos,
+            'goal_pos': env_maze.goal_pos,
+            'initial_distance': env_maze.distance_to_goal(env_maze.start_pos),
+            'battery_used': drone_maze.battery_capacity - drone_maze.get_battery_level(),
+            'total_battery': drone_maze.battery_capacity,
+            'distance_to_nearest_obstacle': env_maze.get_nearest_obstacle_distance(current_pos),
+            'explored_cells': len(drone_maze.explored_cells),
+            'total_cells': env_maze.width * env_maze.height,
+            'collision': False,
+            'environment': env_maze
+        }
+        
+        valid_actions = drone_maze.get_valid_actions()
+        if not valid_actions:
+            break
+        
+        # 🎯 UTILISER minimax_pure_vs_fixed_env AVEC LES CAPTEURS
+        verbose_flag = (step < 3) or ((step + 1) % 10 == 0)
+        
+        action, expected_payoff, analysis = minimax_solver.minimax_pure_vs_fixed_env(
+            available_actions=valid_actions,
+            env_strategy=None,  # Pas de stratégie prédéfinie
+            env_name="Détecté par capteurs",
+            state_params=state_params,
+            verbose=verbose_flag,
+            sensor_distribution=sensor_distribution  # 🔍 Utiliser les capteurs !
+        )
+        
+        # Exécuter l'action
+        drone_maze.move(action)
+        distance = env_maze.distance_to_goal(drone_maze.get_position())
+        
+        if (step + 1) % 5 == 0 or step < 3:
+            print(f"\nÉtape {step+1:3d}: {action.value:15s} → {drone_maze.get_position()}")
+            print(f"  Distance: {distance:5.2f} | Batterie: {drone_maze.get_battery_percentage():5.1f}%")
+        
+        if env_maze.is_goal_reached(drone_maze.get_position()):
+            print(f"\n🎯 OBJECTIF ATTEINT en {step+1} étapes!")
+            break
+    
+    print(f"\nPosition finale: {drone_maze.get_position()}")
+    print(f"Distance finale à l'objectif: {env_maze.distance_to_goal(drone_maze.get_position()):.2f}")
+    print(f"Batterie restante: {drone_maze.get_battery_percentage():.1f}%")
+    print(f"Cellules explorées: {len(drone_maze.explored_cells)}")
+    
     print("\n" + "=" * 70)
     print("✅ TESTS MINIMAX TERMINÉS")
     print("=" * 70)
@@ -641,7 +713,7 @@ def test_minimax_mixed_strategies():
     # Augmentation de stay_penalty pour pénaliser l'immobilité
     payoff_func = PayoffFunction(
         w1=0.6,   # Mission success (augmenté de 0.4 → 0.6)
-        w2=0.05,  # Energy (réduit de 0.2 → 0.05)
+        w2=0.05,  # Energy (réduits de 0.2 → 0.05)
         w3=0.15,  # Collision risk (réduit de 0.3 → 0.15)
         w4=0.2,   # Map quality (augmenté de 0.1 → 0.2)
         stay_penalty_factor=0.9  # Pénalise fortement l'immobilité
@@ -1043,6 +1115,87 @@ def test_minimax_fixed_env_strategy():
     print("\n" + "="*70)
     print("✅ TEST MINIMAX vs ENVIRONNEMENT FIXE TERMINÉ")
     print("="*70)
+
+def test_minimax_with_sensors():
+    """Test MINIMAX avec capteurs intégrés"""
+    from backend.core.sensor import DroneSensor
+    from backend.core.drone import Drone
+    from backend.game_theory.minimax import Minimax
+    from backend.game_theory.payoff import PayoffFunction
+    
+    print("\n" + "="*70)
+    print("TEST: MINIMAX avec Capteurs du Drone")
+    print("="*70)
+    
+    # Setup
+    env = Environment(width=20, height=20)
+    env.add_obstacles([(5, 5), (5, 6), (6, 5), (10, 10), (10, 11)])
+    env.set_goal((18, 18))
+    
+    drone = Drone(environment=env, battery_capacity=250)
+    sensor = DroneSensor(detection_range=5, initial_visibility=1.0)
+    
+    payoff_func = PayoffFunction()
+    minimax_solver = Minimax(payoff=payoff_func)
+    
+    # Navigation
+    max_steps = 100
+    trajectory = []
+    
+    print("\n🚁 DÉBUT DE LA NAVIGATION\n")
+    
+    for step in range(max_steps):
+        current_pos = drone.get_position()
+        trajectory.append(current_pos)
+        
+        # 🔍 CAPTEURS: Détecter la distribution
+        sensor_distribution = sensor.sense_environment_condition(env, current_pos)
+        
+        # Mettre à jour la visibilité
+        most_likely_condition = max(sensor_distribution.items(), key=lambda x: x[1])[0]
+        sensor.update_visibility(most_likely_condition)
+        
+        # Préparer l'état
+        state_params = {
+            'current_pos': current_pos,
+            'goal_pos': env.goal_pos,
+            'initial_distance': env.distance_to_goal(env.start_pos),
+            'battery_used': drone.battery_capacity - drone.get_battery_level(),
+            'total_battery': drone.battery_capacity,
+            'distance_to_nearest_obstacle': env.get_nearest_obstacle_distance(current_pos),
+            'explored_cells': len(drone.explored_cells),
+            'total_cells': env.width * env.height,
+            'collision': False,
+            'environment': env
+        }
+        
+        valid_actions = drone.get_valid_actions()
+        if not valid_actions:
+            break
+        
+        # 🎯 UTILISER minimax_pure_vs_fixed_env AVEC LES CAPTEURS
+        verbose_flag = (step < 3) or ((step + 1) % 10 == 0)
+        
+        action, expected_payoff, analysis = minimax_solver.minimax_pure_vs_fixed_env(
+            available_actions=valid_actions,
+            env_strategy=None,  # Pas de stratégie prédéfinie
+            env_name="Détecté par capteurs",
+            state_params=state_params,
+            verbose=verbose_flag,
+            sensor_distribution=sensor_distribution  # 🔍 Utiliser les capteurs !
+        )
+        
+        # Exécuter l'action
+        drone.move(action)
+        distance = env.distance_to_goal(drone.get_position())
+        
+        if (step + 1) % 5 == 0 or step < 3:
+            print(f"\nÉtape {step+1:3d}: {action.value:15s} → {drone.get_position()}")
+            print(f"  Distance: {distance:5.2f} | Batterie: {drone.get_battery_percentage():5.1f}%")
+        
+        if env.is_goal_reached(drone.get_position()):
+            print(f"\n🎯 OBJECTIF ATTEINT en {step+1} étapes!")
+            break
 
 # Dans main()
 def main():
