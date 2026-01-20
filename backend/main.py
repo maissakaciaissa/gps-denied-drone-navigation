@@ -1,6 +1,5 @@
 """
 Main entry point for the Drone Visual Navigation Project
-This demonstrates PART 1: Environment, Strategies, Payoff, and Logger
 """
 
 import numpy as np
@@ -10,9 +9,12 @@ from backend.game_theory.strategies import (
 )
 from backend.game_theory.payoff import PayoffFunction
 from backend.simulation.logger import SimulationLogger
+from backend.core.sensor import DroneSensor
+from backend.core.drone import Drone
+from backend.game_theory.minimax import Minimax
+
 
 """Test PART 1: Environment creation and functionality"""
-
 def test_environment():
    
     print("=" * 70)
@@ -2297,60 +2299,6 @@ def test_compare():
     print("=" * 70)
 
 
-"""
-def main():
-    print("\n")
-    print("=" * 70)
-    print(" DRONE VISUAL NAVIGATION PROJECT - PART 1 DEMONSTRATION")
-    print("=" * 70)
-    
-    # Test all components
-    env = test_environment()
-    #drone_strategy, env_strategy = test_strategies()
-    #payoff_func = test_payoff_function()
-    payoff_func = PayoffFunction(w1=0.4, w2=0.2, w3=0.3, w4=0.1)
-    
-    # Define strategies to test in mixed strategy simulation
-    # Comment out strategies you don't want to test
-    
-    drone_strategies_to_test =  [
-        ('Uniform', DroneStrategies.create_uniform_mixed_strategy()),
-        ('Cautious', DroneStrategies.create_cautious_strategy()),
-        ('Aggressive', DroneStrategies.create_aggressive_strategy()),
-        ('Balanced', DroneStrategies.create_balanced_strategy()),
-        # Custom: Exploration mode (favor movement in all directions, only 4 actions)
-        ('Custom_Exploration', DroneStrategies.create_custom_strategy({
-           DroneAction.MOVE_UP: 0.3,
-           DroneAction.MOVE_DOWN: 0.2,
-           DroneAction.MOVE_LEFT: 0.25,
-           DroneAction.MOVE_RIGHT: 0.25
-           # Note: STAY and ROTATE omitted - tests probability lookup fix
-         }))
-    ]
-    
-    env_strategies_to_test = [
-        ('Uniform', EnvironmentStrategies.create_uniform_mixed_strategy()),
-        ('Typical', EnvironmentStrategies.create_typical_conditions()),
-        ('Adversarial', EnvironmentStrategies.create_adversarial_conditions()),
-        ('Favorable', EnvironmentStrategies.create_favorable_conditions()),
-        # Custom: Danger zone (high obstacle probability)
-        ('Custom_DangerZone', EnvironmentStrategies.create_custom_strategy({
-            EnvironmentCondition.CLEAR_PATH: 0.15,
-            EnvironmentCondition.OBSTACLE_AHEAD: 0.5,
-            EnvironmentCondition.LOW_VISIBILITY: 0.2,
-            EnvironmentCondition.SENSOR_NOISE: 0.1,
-            EnvironmentCondition.LIGHTING_CHANGE: 0.05
-        }))
-    ]
-    
-    # Run simulation with custom strategies
-    pure_results, mixed_results = test_strategy_simulation(env, payoff_func,drone_strategies_to_test,env_strategies_to_test)
-    
-    # Test logger
-    test_logger()
-    test_minimax()
-
-"""
 
 def main():
     print("\n")
