@@ -26,11 +26,11 @@ When the forward path is completely blocked, the drone executes a full rotation 
 
 ![Turnaround Behavior](reports/images/gifdrone3.gif)
 
-## � Project Explanation Video
+## 📹 Project Explanation Video
 
 For a comprehensive walkthrough of the project architecture, algorithms, and Unity simulation, watch the explanation video:
 
-[**Watch Project Explanation** (demonstrations/explanation.mp4)](demonstrations/explanation.mp4)
+[**Watch Project Explanation** (demonstration/explanation.mp4)](demonstration/explanation.mp4)
 
 This video covers the complete project implementation, game-theoretic approach, and real-time simulation results in Unity.
 
