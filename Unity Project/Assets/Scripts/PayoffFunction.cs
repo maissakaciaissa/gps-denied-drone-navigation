@@ -4,7 +4,7 @@ using static GameTheory;
 public class PayoffFunction 
 {
     [Header("Payoff Weights")]
-    public float goalWeight = 10f;
+    public float goalWeight = 12;
     public float safetyWeight = 5f;
     public float batteryWeight = 2f;
     public float collisionPenalty = -100f;
@@ -14,6 +14,7 @@ public class PayoffFunction
       VisionState visionState,
       bool isExploring,   // ← ADD THIS
       Vector3 currentPos,
+      Vector3 predictedPos,
       Vector3 goalPos,
       float initialDistance,
       float distanceToObstacle,
@@ -25,9 +26,17 @@ public class PayoffFunction
 
         // 1. Goal progress
         float currentDistance = Vector3.Distance(currentPos, goalPos);
-        float progress = (initialDistance - currentDistance) / initialDistance;
-        payoff += progress * goalWeight;
-        Debug.Log($"Progress: {progress}, Goal Payoff: {progress * goalWeight}");
+        float predictedDistance = Vector3.Distance(predictedPos, goalPos);
+
+        // Positive if we move closer, negative if we move away
+        float delta = currentDistance - predictedDistance;
+
+        // Normalize
+        float normalizedDelta = delta / initialDistance;
+
+        // Strong incentive to approach goal
+        payoff += normalizedDelta * goalWeight * 2f;
+        Debug.Log($"Delta: {delta}, Normalized Delta: {normalizedDelta}, Goal Payoff: {normalizedDelta * goalWeight * 2f}");
 
         // 2. Battery efficiency
         float batteryRemaining = 1f - (batteryUsed / totalBattery);

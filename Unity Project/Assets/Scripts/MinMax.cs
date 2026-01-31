@@ -50,6 +50,7 @@ public class MinMax
                 vision,
                 exploring,
                 currentPos,
+                predictedPos,
                 goalPos,
                 initialDistance,
                 distanceToObstacle,
@@ -83,6 +84,8 @@ public class MinMax
     Vector3 PredictPosition(DroneAction action, Vector3 currentPos, float moveDistance)
     {
         Vector3 predictedPos = currentPos;
+
+        Debug.Log("currentPos: " + currentPos);
 
         switch (action)
         {
