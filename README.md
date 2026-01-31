@@ -26,7 +26,15 @@ When the forward path is completely blocked, the drone executes a full rotation 
 
 ![Turnaround Behavior](reports/images/gifdrone3.gif)
 
-## 🚀 Quick Start
+## � Project Explanation Video
+
+For a comprehensive walkthrough of the project architecture, algorithms, and Unity simulation, watch the explanation video:
+
+[**Watch Project Explanation** (demonstrations/explanation.mp4)](demonstrations/explanation.mp4)
+
+This video covers the complete project implementation, game-theoretic approach, and real-time simulation results in Unity.
+
+## �🚀 Quick Start
 
 ```bash
 cd gps-denied-drone-navigation
