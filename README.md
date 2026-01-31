@@ -1,6 +1,30 @@
-# GPS-Denied Drone Navigation - PART 1
+# GPS-Denied Drone Navigation
 
-Game-theoretic approach to drone navigation in GPS-denied environments.
+Game-theoretic approach to autonomous drone navigation in GPS-denied environments using Minimax, Nash Equilibrium, and Bayesian decision-making algorithms.
+
+## 🎯 Overview
+
+This project presents a comprehensive solution for drone navigation when GPS signals are unavailable, modeling the problem as a two-player game between the drone and its environment. Three distinct algorithms are implemented and evaluated across multiple test scenarios.
+
+## 🎬 Unity Simulation Demonstrations
+
+### Simple Navigation
+
+When the path is unobstructed, the drone moves directly toward the goal using efficient straight-line movement.
+
+![Simple Navigation](reports/images/gifdrone1.gif)
+
+### Rotation and Direction Change
+
+When encountering obstacles, the drone rotates to assess alternative directions and selects a new path around obstructions.
+
+![Rotation Behavior](reports/images/gifdrone2.gif)
+
+### Complete Turnaround
+
+When the forward path is completely blocked, the drone executes a full rotation to reverse direction and backtrack efficiently.
+
+![Turnaround Behavior](reports/images/gifdrone3.gif)
 
 ## 🚀 Quick Start
 
@@ -8,6 +32,29 @@ Game-theoretic approach to drone navigation in GPS-denied environments.
 cd gps-denied-drone-navigation
 python backend/main.py
 ```
+
+## 🧠 Algorithms
+
+### 1. **Minimax**
+
+- Guarantees worst-case performance
+- Fastest computation time (0.072s per decision)
+- 100% optimal path efficiency
+- Deterministic behavior
+
+### 2. **Nash Equilibrium**
+
+- Finds stable strategy pairs
+- Strategic equilibrium approach
+- 100% optimal path efficiency
+- Moderate computation time (0.092s per decision)
+
+### 3. **Bayesian Game Solver**
+
+- Enables learning under incomplete information
+- Adaptive behavior based on belief updates
+- 91% path efficiency (9% longer paths for exploration)
+- Robust to environmental uncertainty
 
 ## ✅ Implemented Components
 
