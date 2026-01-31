@@ -251,7 +251,11 @@ U_{\text{drone}}(a_d^*, a_e^*) &\geq U_{\text{drone}}(a_d, a_e^*) \quad \forall 
 U_{\text{env}}(a_d^*, a_e^*) &\geq U_{\text{env}}(a_d^*, a_e) \quad \forall a_e
 \end{align}
 
-\textbf{2. Mixed Strategy Nash:} When no pure Nash exists, find mixed strategies using support enumeration. For a given support (subset of actions), compute mixed strategy probabilities using the indifference condition: a player is indifferent between all actions in the support, meaning they have equal expected payoff. This is implemented in the \texttt{\_solve\_for\_support} function which solves the system of indifference equations.
+\textbf{2. Mixed Strategy Nash:} When no pure Nash exists, we employ two methods:
+
+\textbf{a) Support Enumeration (Primary Method):} For each possible support (subset of actions), compute mixed strategy probabilities using the indifference condition. A player must be indifferent between all actions in their support, meaning they have equal expected payoff. The \texttt{\_solve\_for\_support} function solves the system of indifference equations to find the equilibrium probabilities.
+
+\textbf{b) Iterative Best Response (Fallback Method):} If support enumeration fails to find a mixed Nash equilibrium, the algorithm uses iterative best response. This method alternates between computing best responses for each player until convergence to a Nash equilibrium.
 
 \begin{algorithm}
 \caption{Nash Equilibrium Finder}
@@ -381,7 +385,7 @@ The sensor provides:
 
 \subsection{Experimental Setup}
 
-To comprehensively evaluate the three game-theoretic algorithms (Minimax, Nash Equilibrium, and Bayesian), we designed four distinct test scenarios with varying complexity levels. Each scenario was tested with 20 trials per algorithm, yielding a total of 240 trials (80 trials per algorithm).
+To comprehensively evaluate the three game-theoretic algorithms (Minimax, Nash Equilibrium, and Bayesian), we designed four distinct test scenarios with varying complexity levels. We conducted 20 trials per algorithm in each of the 4 scenarios, resulting in 80 trials per algorithm and 240 trials total.
 
 \subsubsection{Test Scenarios}
 
