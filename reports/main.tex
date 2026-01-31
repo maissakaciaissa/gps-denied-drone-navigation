@@ -1,0 +1,617 @@
+\documentclass[12pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+
+% Page setup
+\geometry{margin=1in}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\thepage}
+\lhead{Visual Navigation in GPS-Denied Environments}
+
+% Code listing style
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray}
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=blue
+}
+
+\begin{document}
+
+% Title Page
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    \includegraphics[width=0.3\textwidth]{usthblogo.png}\\[1cm]
+    
+    {\Large \textbf{University of Science and Technology}\par}
+    {\Large \textbf{Houari Boumediene}\par}
+    \vspace{0.5cm}
+    {\large Faculty of Computer Science\par}
+    
+    \vspace{2cm}
+    
+    {\huge \textbf{How Drones See:}\par}
+    \vspace{0.5cm}
+    {\huge \textbf{Visual Navigation in}\par}
+    \vspace{0.5cm}
+    {\huge \textbf{GPS-Denied Environments}\par}
+    
+    \vspace{2cm}
+    
+    {\Large Presented by:\par}
+    \vspace{0.3cm}
+    {\large Talba Adel\par}
+    {\large Timouni Adnane\par}
+    {\large Kaci Aissa Maissa\par}
+    {\large Boumala Rami Amine\par}
+
+\end{titlepage}
+
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+\subsection{Problem Statement}
+Autonomous drone navigation in GPS-denied environments presents a critical challenge in modern robotics and autonomous systems. Traditional navigation methods rely heavily on Global Positioning System (GPS) signals for localization and path planning. However, GPS signals can be unreliable or completely unavailable in several scenarios:
+
+In such environments, drones must rely on alternative navigation strategies, making decisions based on limited sensory information while facing environmental uncertainties and obstacles.
+
+\subsection{Game-Theoretic Approach}
+We propose modeling drone navigation as a two-player game:
+\begin{itemize}
+    \item \textbf{Player 1 (Drone):} Rational agent seeking to reach a goal while minimizing energy consumption and collision risk
+    \item \textbf{Player 2 (Environment):} Nature/adversary presenting obstacles, visibility conditions, and sensor uncertainties
+\end{itemize}
+
+This formulation allows us to apply three complementary algorithms:
+\begin{enumerate}
+    \item \textbf{Minimax:} Guarantees worst-case performance
+    \item \textbf{Nash Equilibrium:} Finds stable strategy pairs
+    \item \textbf{Bayesian Games:} Enables learning under incomplete information
+\end{enumerate}
+
+\section{Methodology}
+
+\subsection{Game Formulation}
+
+\subsubsection{Players and Strategies}
+
+\textbf{Drone Actions (Pure Strategies):}
+\begin{align*}
+A_{\text{drone}} = \{\text{MOVE\_UP}, \text{MOVE\_DOWN}, \text{MOVE\_LEFT}, \\
+\text{MOVE\_RIGHT}, \text{STAY}, \text{ROTATE}\}
+\end{align*}
+
+\textbf{Environment Conditions (Pure Strategies):}
+\begin{align*}
+A_{\text{env}} = \{\text{CLEAR\_PATH}, \text{OBSTACLE\_AHEAD}, \text{LOW\_VISIBILITY}, \\
+\text{SENSOR\_NOISE}, \text{LIGHTING\_CHANGE}\}
+\end{align*}
+
+\textbf{Mixed Strategies:} Both players can employ probability distributions over pure strategies:
+\begin{equation}
+\sigma_{\text{drone}} = \{p_1, p_2, ..., p_6\} \quad \text{where} \quad \sum_{i=1}^{6} p_i = 1
+\end{equation}
+
+
+\subsubsection{State Space}
+The game state $s_t$ at time $t$ includes:
+\begin{align}
+s_t = (&\text{position}(x, y), \text{goal}(x_g, y_g), \text{battery\_level}, \\
+&\text{explored\_cells}, \text{obstacle\_distance}) \nonumber
+\end{align}
+
+\subsubsection{Payoff Function}
+The payoff function $U: A_{\text{drone}} \times A_{\text{env}} \times S \rightarrow \mathbb{R}^2$ returns utilities for both players:
+
+\begin{equation}
+U(a_d, a_e, s) = (U_{\text{drone}}, U_{\text{env}})
+\end{equation}
+
+The drone's utility comprises four components:
+
+\textbf{1. Mission Progress Component:}
+\begin{equation}
+U_{\text{mission}} = \begin{cases}
++100 & \text{if goal reached} \\
++\frac{\Delta d}{d_{\text{initial}}} \times 20 & \text{if moving toward goal} \\
+-10 \times 0.7 & \text{if moving away from goal}
+\end{cases}
+\end{equation}
+
+\textbf{2. Energy Component:}
+\begin{equation}
+U_{\text{energy}} = -C(a) \quad \text{where} \quad C(a) = \begin{cases}
+2 & \text{MOVE actions} \\
+2 & \text{ROTATE} \\
+1 & \text{STAY}
+\end{cases}
+\end{equation}
+
+\textbf{3. Collision Risk Component:}
+\begin{equation}
+U_{\text{collision}} = \begin{cases}
+-50 & \text{if collision occurred} \\
+-\frac{10}{d_{\text{obstacle}} + 1} & \text{proximity penalty}
+\end{cases}
+\end{equation}
+
+\textbf{4. Exploration Component:}
+\begin{equation}
+U_{\text{exploration}} = +\frac{\text{explored\_cells}}{\text{total\_cells}} \times 5
+\end{equation}
+
+\textbf{Total Drone Payoff:}
+\begin{equation}
+U_{\text{drone}} = U_{\text{mission}} + U_{\text{energy}} + U_{\text{collision}} + U_{\text{exploration}}
+\end{equation}
+
+The environment's payoff is antagonistic:
+\begin{equation}
+U_{\text{env}} = -U_{\text{drone}}
+\end{equation}
+
+\subsection{Algorithm 1: Minimax Decision Making}
+
+\subsubsection{Theoretical Foundation}
+Minimax guarantees the best worst-case performance. For each drone action $a_d$, we find the worst environmental condition:
+
+\begin{equation}
+v(a_d) = \min_{a_e \in A_{\text{env}}} U_{\text{drone}}(a_d, a_e, s)
+\end{equation}
+
+The optimal action maximizes this minimum:
+\begin{equation}
+a_d^* = \arg\max_{a_d \in A_{\text{drone}}} v(a_d)
+\end{equation}
+
+\subsubsection{Implementation Variants}
+
+\textbf{1. Pure Minimax:} Evaluates pure drone actions against all possible environmental conditions.
+
+\textbf{2. Minimax vs Mixed Environment:} Drone plays pure actions against environment's mixed strategy $\sigma_e$:
+\begin{equation}
+v(a_d, \sigma_e) = \sum_{a_e \in A_{\text{env}}} \sigma_e(a_e) \cdot U_{\text{drone}}(a_d, a_e, s)
+\end{equation}
+
+\begin{algorithm}
+\caption{Minimax Decision Algorithm}
+\begin{algorithmic}[1]
+\Require Available actions $A$, State $s$
+\Ensure Optimal action $a^*$
+\State $\text{best\_action} \gets \text{null}$
+\State $\text{best\_worst\_case} \gets -\infty$
+\For{each $a_d \in A$}
+    \State $\text{worst\_payoff} \gets +\infty$
+    \For{each $a_e \in A_{\text{env}}$}
+        \State $u \gets U_{\text{drone}}(a_d, a_e, s)$
+        \State $\text{worst\_payoff} \gets \min(\text{worst\_payoff}, u)$
+    \EndFor
+    \If{$\text{worst\_payoff} > \text{best\_worst\_case}$}
+        \State $\text{best\_worst\_case} \gets \text{worst\_payoff}$
+        \State $\text{best\_action} \gets a_d$
+    \EndIf
+\EndFor
+\State \Return $\text{best\_action}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Algorithm 2: Nash Equilibrium}
+
+\subsubsection{Theoretical Foundation}
+A Nash equilibrium is a strategy profile $(\sigma_d^*, \sigma_e^*)$ where neither player can improve by unilaterally deviating:
+
+\begin{align}
+U_{\text{drone}}(\sigma_d^*, \sigma_e^*) &\geq U_{\text{drone}}(\sigma_d, \sigma_e^*) \quad \forall \sigma_d \\
+U_{\text{env}}(\sigma_d^*, \sigma_e^*) &\geq U_{\text{env}}(\sigma_d^*, \sigma_e) \quad \forall \sigma_e
+\end{align}
+
+\subsubsection{Solution Methods}
+
+\textbf{1. Pure Strategy Nash:} Check all action pairs for mutual best responses.
+
+A pair $(a_d^*, a_e^*)$ is a pure Nash equilibrium if:
+\begin{align}
+U_{\text{drone}}(a_d^*, a_e^*) &\geq U_{\text{drone}}(a_d, a_e^*) \quad \forall a_d \\
+U_{\text{env}}(a_d^*, a_e^*) &\geq U_{\text{env}}(a_d^*, a_e) \quad \forall a_e
+\end{align}
+
+\textbf{2. Mixed Strategy Nash:} When no pure Nash exists, find mixed strategies using support enumeration. For a given support (subset of actions), compute mixed strategy probabilities using the indifference condition: a player is indifferent between all actions in the support, meaning they have equal expected payoff. This is implemented in the \texttt{\_solve\_for\_support} function which solves the system of indifference equations.
+
+\begin{algorithm}
+\caption{Nash Equilibrium Finder}
+\begin{algorithmic}[1]
+\Require Payoff matrices $U_d$, $U_e$
+\Ensure Nash equilibrium strategies $(\sigma_d^*, \sigma_e^*)$
+\State // Check for pure strategy Nash
+\For{each $(a_d, a_e)$ in $A_{\text{drone}} \times A_{\text{env}}$}
+    \If{IsBestResponse$(a_d, a_e, U_d, U_e)$}
+        \State \Return Pure strategy equilibrium $(a_d, a_e)$
+    \EndIf
+\EndFor
+\State // Find mixed strategy Nash
+\State $(\sigma_d^*, \sigma_e^*) \gets$ SupportEnumeration$(U_d, U_e)$
+\If{$(\sigma_d^*, \sigma_e^*) = \text{null}$}
+    \State $(\sigma_d^*, \sigma_e^*) \gets$ IterativeBestResponse$(U_d, U_e)$
+\EndIf
+\State \Return $(\sigma_d^*, \sigma_e^*)$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Algorithm 3: Bayesian Game Solver}
+
+\subsubsection{Theoretical Foundation}
+The drone maintains beliefs over environment types:
+\begin{equation}
+\text{Beliefs: } \{P(\text{adversarial}), P(\text{neutral}), P(\text{favorable})\}
+\end{equation}
+
+Each environment type has different behavioral characteristics that the drone learns to identify:
+\begin{itemize}
+    \item \textbf{Adversarial:} When the drone encounters obstacles (OBSTACLE\_AHEAD condition), belief in adversarial environment increases
+    \item \textbf{Favorable:} When the drone encounters clear paths (CLEAR\_PATH condition), belief in favorable environment increases
+    \item \textbf{Neutral:} Mixed or uncertain observations increase neutral belief
+\end{itemize}
+
+The drone's belief distribution shifts based on observed conditions: if the drone repeatedly encounters obstacles, belief probability for adversarial environment increases while favorable decreases. Conversely, repeated clear paths shift beliefs toward favorable and away from adversarial.
+
+\subsubsection{Bayesian Update Rule}
+After observing condition $c$, update beliefs using Bayes' theorem:
+
+\begin{equation}
+P(\text{type} | c) = \frac{P(c | \text{type}) \cdot P(\text{type})}{\sum_{\text{type}'} P(c | \text{type}') \cdot P(\text{type}')}
+\end{equation}
+
+Where:
+\begin{itemize}
+    \item $P(\text{type})$ is the prior belief
+    \item $P(c | \text{type})$ is the likelihood (from environment's mixed strategy)
+    \item $P(\text{type} | c)$ is the posterior belief
+\end{itemize}
+
+\subsubsection{Action Selection}
+
+\textbf{Expected Utility:}
+\begin{equation}
+EU(a_d) = \sum_{\text{type}} P(\text{type}) \cdot \sum_{a_e} \sigma_{\text{type}}(a_e) \cdot U_{\text{drone}}(a_d, a_e, s)
+\end{equation}
+
+\textbf{Two Modes:}
+
+1. \textbf{Pure Strategy Mode:} Select action with maximum expected utility
+\begin{equation}
+a_d^* = \arg\max_{a_d} EU(a_d)
+\end{equation}
+
+2. \textbf{Mixed Strategy Mode:} Sample action using softmax distribution
+\begin{equation}
+P(a_d) = \frac{e^{EU(a_d)}}{\sum_{a_d'} e^{EU(a_d')}}
+\end{equation}
+
+\begin{algorithm}
+\caption{Bayesian Decision Making}
+\begin{algorithmic}[1]
+\Require Available actions $A$, State $s$, Beliefs $B$
+\Ensure Optimal action $a^*$
+\State // Calculate expected utility for each action
+\For{each $a_d \in A$}
+    \State $EU(a_d) \gets 0$
+    \For{each type in \{adversarial, neutral, favorable\}}
+        \State $\sigma_{\text{type}} \gets$ GetEnvironmentStrategy(type)
+        \State $u \gets \sum_{a_e} \sigma_{\text{type}}(a_e) \cdot U(a_d, a_e, s)$
+        \State $EU(a_d) \gets EU(a_d) + B(\text{type}) \cdot u$
+    \EndFor
+\EndFor
+\State // Select action based on mode
+\If{pure strategy mode}
+    \State \Return $\arg\max_{a_d} EU(a_d)$
+\Else
+    \State $P(a_d) \gets \text{softmax}(EU)$
+    \State \Return Sample from $P$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Sensor System}
+
+Our sensor model simulates realistic vision and detection capabilities:
+
+\textbf{Detection Range:} Base range $r = 5$ cells
+
+\textbf{Visibility Factor:} $v \in [0, 1]$ affected by environmental conditions:
+\begin{equation}
+\text{Effective Range} = \max(1, \lfloor r \times v \rfloor)
+\end{equation}
+
+\textbf{Visibility Updates:}
+\begin{equation}
+v = \begin{cases}
+1.0 & \text{CLEAR\_PATH} \\
+0.4 & \text{LOW\_VISIBILITY} \\
+0.6 & \text{SENSOR\_NOISE} \\
+0.7 & \text{LIGHTING\_CHANGE}
+\end{cases}
+\end{equation}
+
+The sensor provides:
+\begin{enumerate}
+    \item Visible obstacles within effective range
+    \item Directional obstacle detection (up/down/left/right)
+    \item Observable Region via \texttt{get\_observable\_region} function - returns grid coordinates the drone can currently observe
+    \item Environment Condition Sensing via \texttt{sense\_environment\_condition} function - translates observed characteristics into probabilistic strategy distribution
+\end{enumerate}
+
+
+\section{Experimental Results and Analysis}
+
+\subsection{Experimental Setup}
+
+To comprehensively evaluate the three game-theoretic algorithms (Minimax, Nash Equilibrium, and Bayesian), we designed four distinct test scenarios with varying complexity levels. Each scenario was tested with 20 trials per algorithm, yielding a total of 240 trials (80 trials per algorithm).
+
+\subsubsection{Test Scenarios}
+
+\begin{table}[H]
+\centering
+\caption{Test Scenario Configurations}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Scenario} & \textbf{Grid Size} & \textbf{Obstacles} & \textbf{Battery} & \textbf{Difficulty} \\
+\midrule
+Simple Environment & 20×20 & 5 & 200 & Low \\
+Medium Complexity & 25×25 & 16 & 300 & Medium \\
+High Complexity & 30×30 & 41 & 400 & High \\
+Narrow Passage & 20×20 & 32 & 250 & Medium \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Each trial was limited to 500 steps maximum, with success defined as reaching the goal position without depleting battery reserves. The following metrics were collected:
+
+\begin{itemize}
+    \item \textbf{Success Rate:} Percentage of trials reaching the goal
+    \item \textbf{Path Length:} Number of steps taken to reach the goal
+    \item \textbf{Battery Usage:} Percentage of total battery consumed
+    \item \textbf{Computation Time:} Average time per decision (seconds)
+    \item \textbf{Collisions:} Number of obstacle collisions
+    \item \textbf{Path Efficiency:} Ratio of optimal path to actual path
+\end{itemize}
+
+\subsection{Performance Comparison}
+
+\subsubsection{Overall Performance Metrics}
+
+Across all 240 trials, we observed the following aggregate performance:
+
+\begin{table}[H]
+\centering
+\caption{Overall Algorithm Performance (80 trials per algorithm)}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Algorithm} & \textbf{Success} & \textbf{Avg Path} & \textbf{Avg Battery} & \textbf{Path} & \textbf{Avg Time} & \textbf{Collisions} \\
+ & \textbf{Rate} & \textbf{Length} & \textbf{Usage} & \textbf{Efficiency} & \textbf{(s)} & \\
+\midrule
+Minimax & 100.0\% & 33.8 steps & 23.4\% & 100\% & \textbf{0.072} & 0 \\
+Nash Equilibrium & 100.0\% & 33.8 steps & 23.4\% & 100\% & 0.092 & 0 \\
+Bayesian & 100.0\% & 36.9 steps & 25.3\% & 91\% & 0.233 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key Findings:}
+\begin{itemize}
+    \item All three algorithms achieved \textbf{100\% success rate}, demonstrating robustness
+    \item Minimax and Nash found identical optimal paths in most scenarios
+    \item Bayesian exhibited 9\% longer paths due to exploratory behavior
+    \item Minimax was fastest computationally (3× faster than Bayesian)
+    \item Zero collisions across all trials validate safety of all approaches
+\end{itemize}
+
+\subsubsection{Scenario-Specific Analysis}
+
+Figure~\ref{fig:aggregate} presents a comprehensive comparison across all test scenarios, highlighting how algorithm performance varies with environmental complexity.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{aggregate_comparison.png}
+\caption{Aggregate performance comparison across all scenarios showing (a) success rate, (b) average path length, (c) battery usage, and (d) computation time for each algorithm.}
+\label{fig:aggregate}
+\end{figure}
+
+\textbf{Simple Environment Results:}
+
+In the sparse obstacle scenario, all algorithms performed optimally:
+\begin{itemize}
+    \item Minimax \& Nash: 30 steps (deterministic, $\sigma = 0.0$)
+    \item Bayesian: 31.6 steps ($\sigma = 1.43$, adaptive behavior)
+    \item Computation time: 0.037s (Minimax), 0.063s (Nash), 0.095s (Bayesian)
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{comparison_simple_environment.png}
+\caption{Performance comparison in Simple Environment scenario.}
+\label{fig:simple}
+\end{figure}
+
+\textbf{Medium Complexity Results:}
+
+With increased obstacle density, Bayesian's exploratory nature became evident:
+\begin{itemize}
+    \item Minimax \& Nash: 40 steps (optimal path maintained)
+    \item Bayesian: 44.5 steps (11\% longer due to uncertainty management)
+    \item Battery efficiency: Minimax/Nash used 26.7\%, Bayesian used 29.6\%
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{comparison_medium_complexity.png}
+\caption{Performance comparison in Medium Complexity scenario.}
+\label{fig:medium}
+\end{figure}
+
+\textbf{High Complexity Results:}
+
+In the most challenging scenario with 41 obstacles, performance differences amplified:
+\begin{itemize}
+    \item Minimax \& Nash: 50 steps (continued optimal performance)
+    \item Bayesian: 57.3 steps (14.6\% longer, increased exploration)
+    \item Computation time gap widened: Bayesian took 3.2× longer than Minimax
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{comparison_high_complexity.png}
+\caption{Performance comparison in High Complexity scenario with dense obstacles.}
+\label{fig:high}
+\end{figure}
+
+\textbf{Narrow Passage Results:}
+
+This scenario tested the algorithms' ability to find constrained paths:
+\begin{itemize}
+    \item All algorithms successfully navigated the narrow gap
+    \item Minimax \& Nash: 15 steps (minimal path)
+    \item Bayesian: 15.3 steps (minor variation, $\sigma = 0.98$)
+    \item Success demonstrates effective obstacle avoidance across all approaches
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{comparison_narrow_passage.png}
+\caption{Performance comparison in Narrow Passage scenario requiring precise navigation.}
+\label{fig:narrow}
+\end{figure}
+
+\subsection{Statistical Analysis}
+
+\subsubsection{Determinism vs. Adaptability}
+
+The standard deviation in path lengths reveals fundamental algorithmic differences:
+
+\begin{table}[H]
+\centering
+\caption{Path Length Consistency Across Scenarios}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Algorithm} & \textbf{Mean Path Length} & \textbf{Std Deviation} \\
+\midrule
+Minimax & 33.8 steps & 0.0 (deterministic) \\
+Nash Equilibrium & 33.8 steps & 0.0 (deterministic) \\
+Bayesian & 36.9 steps & 1.43 (adaptive) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Interpretation:}
+\begin{itemize}
+    \item \textbf{Minimax \& Nash ($\sigma = 0$):} Make identical decisions given the same state, ensuring predictable and repeatable behavior. Ideal for environments where consistency is critical.
+    \item \textbf{Bayesian ($\sigma = 1.43$):} Exhibits adaptive behavior based on belief evolution, trading determinism for robustness under uncertainty. Path variations indicate probabilistic decision-making.
+\end{itemize}
+
+\subsubsection{Computational Efficiency}
+
+Computation time analysis reveals the cost of algorithmic sophistication:
+
+\begin{equation}
+\text{Speedup Factor} = \frac{T_{\text{Bayesian}}}{T_{\text{Minimax}}} = \frac{0.233\text{s}}{0.072\text{s}} \approx 3.24\times
+\end{equation}
+
+\begin{equation}
+\text{Speedup Factor} = \frac{T_{\text{Bayesian}}}{T_{\text{Nash}}} = \frac{0.233\text{s}}{0.092\text{s}} \approx 2.53\times
+\end{equation}
+
+For a typical 35-step mission:
+\begin{itemize}
+    \item Minimax: $35 \times 0.072 = 2.52$ seconds total computation
+    \item Nash: $35 \times 0.092 = 3.22$ seconds total computation
+    \item Bayesian: $35 \times 0.233 = 8.16$ seconds total computation
+    \item Nash adds 0.70 seconds for equilibrium computation vs. Minimax
+    \item Bayesian adds 5.64 seconds for belief maintenance and probability updates vs. Minimax
+\end{itemize}
+
+\subsection{Discussion}
+
+\subsubsection{Algorithm Selection Criteria}
+
+Based on our experimental results, we provide the following selection guidelines:
+
+\textbf{Choose Minimax when:}
+\begin{itemize}
+    \item Real-time response is critical (fastest: 0.072s per decision)
+    \item Environment is relatively predictable
+    \item Hardware resources are limited
+    \item Deterministic behavior is required
+    \item Path optimality is paramount
+\end{itemize}
+
+\textbf{Choose Nash Equilibrium when:}
+\begin{itemize}
+    \item Environment exhibits adversarial characteristics
+    \item Balanced approach between players is needed
+    \item Optimal paths with strategic equilibrium are desired
+    \item Moderate computation time is acceptable (0.092s per decision)
+\end{itemize}
+
+\textbf{Choose Bayesian when:}
+\begin{itemize}
+    \item Environment uncertainty is high
+    \item Adaptive behavior is more important than speed
+    \item System can afford 3× computation overhead
+    \item Learning and belief updates provide value
+    \item Robustness to unknown conditions is critical
+\end{itemize}
+
+\subsubsection{Trade-offs and Insights}
+
+Our experimental evaluation reveals fundamental trade-offs in game-theoretic navigation:
+
+\textbf{Efficiency vs. Adaptability:} Minimax and Nash achieve optimal paths through deterministic strategies, while Bayesian trades 9\% path efficiency for adaptive uncertainty management.
+
+\textbf{Speed vs. Sophistication:} The 3× computation time increase in Bayesian reflects the cost of maintaining probability distributions and performing belief updates at each step.
+
+\textbf{Consistency vs. Robustness:} Zero standard deviation in Minimax/Nash indicates perfect consistency but may limit adaptability to unexpected scenarios, whereas Bayesian's variance demonstrates responsive decision-making.
+
+\textbf{Success Rate Parity:} The 100\% success rate across all algorithms validates that game-theoretic approaches are fundamentally sound for GPS-denied navigation, with differences manifesting in efficiency rather than capability.
+
+
+\section{Conclusion}
+
+This work presents a comprehensive game-theoretic solution to autonomous drone navigation in GPS-denied environments. By modeling navigation as a two-player game between the drone and the environment, we developed and evaluated three distinct decision-making algorithms.In conclusion, game theory provides not just a theoretical framework but a practical, implementable solution for one of robotics' most challenging problems—enabling drones to see, reason, and navigate intelligently when traditional positioning systems fail.
+
+
+\end{document}
