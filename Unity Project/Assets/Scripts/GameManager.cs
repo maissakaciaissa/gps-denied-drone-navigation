@@ -1,4 +1,6 @@
+﻿using System.Collections.Generic;
 using UnityEngine;
+using static GameTheory;
 
 public class GameManager : MonoBehaviour
 {
@@ -8,27 +10,42 @@ public class GameManager : MonoBehaviour
     [Header("Settings")]
     public bool autoNavigate = false;
     public float moveDistance = 2f;
-    public float arrivalThreshold = 0.5f; // How close = "arrived"
+    public float arrivalThreshold = 0.5f;
 
     [Header("Timing")]
-    public float pauseDuration = 1f; // Pause after reaching destination
+    public float pauseDuration = 1f;
 
     private Vector3 targetPosition;
     private bool isMovingToTarget = false;
     private bool isPaused = false;
     private float pauseTimer = 0f;
 
+    public Vector3 goalPosition;
+    private float initialDistance;
 
-    
+    public bool collisionDetected = false;
+
+    MinMax minMax;
+    HashSet<Vector3Int> visitedCells = new HashSet<Vector3Int>();
+
+    Vector3Int GetCell(Vector3 pos)
+    {
+        return new Vector3Int(
+            Mathf.RoundToInt(pos.x),
+            0,
+            Mathf.RoundToInt(pos.z)
+        );
+    }
 
     void Start()
     {
         targetPosition = transform.position;
+        initialDistance = Vector3.Distance(drone.transform.position, goalPosition);
+        minMax = new MinMax(new PayoffFunction(),drone.transform);
     }
 
     void Update()
     {
-        // Toggle auto navigation
         if (Input.GetKeyDown(KeyCode.Space))
         {
             autoNavigate = !autoNavigate;
@@ -43,7 +60,6 @@ public class GameManager : MonoBehaviour
             NavigateWithPause();
         }
 
-        // Manual info display
         if (Input.GetKeyDown(KeyCode.I))
         {
             DisplayVisionInfo();
@@ -54,13 +70,11 @@ public class GameManager : MonoBehaviour
     {
         if (isPaused)
         {
-            // Currently paused - count down
-            drone.Stop(); // Make sure drone stays stopped
+            drone.Stop();
             pauseTimer += Time.deltaTime;
-            
+
             if (pauseTimer >= pauseDuration)
             {
-                // Pause finished
                 isPaused = false;
                 isMovingToTarget = false;
                 Debug.Log("Pause complete - deciding next move");
@@ -68,13 +82,11 @@ public class GameManager : MonoBehaviour
         }
         else if (isMovingToTarget)
         {
-            // Currently moving to target
-            Vector3 dronePosition = drone.transform.position;   
-            float distanceToTarget = Vector3.Distance(dronePosition , targetPosition);
+            Vector3 dronePosition = drone.transform.position;
+            float distanceToTarget = Vector3.Distance(dronePosition, targetPosition);
 
             if (distanceToTarget <= arrivalThreshold)
             {
-                // Reached destination - start pause
                 drone.Stop();
                 isPaused = true;
                 pauseTimer = 0f;
@@ -83,58 +95,134 @@ public class GameManager : MonoBehaviour
             }
             else
             {
-                // Keep calling MoveTo every frame until we arrive
                 drone.MoveTo(targetPosition);
             }
         }
         else
         {
-            // Not moving, not paused - decide next move
-            DecideNextMove();
+            DecideNextMoveMinMax();
         }
     }
-
-    void DecideNextMove()
+    
+    void DecideNextMoveMinMax()
     {
-        if (vision.IsForwardClear(moveDistance))
+        // 1. Update vision
+        vision.ScanForward();
+
+        // 2. Build vision state
+        VisionState visionState = GetVisionState();
+
+        Debug.Log($"VISION → F:{visionState.forwardClear} L:{visionState.leftClear} R:{visionState.rightClear}");
+
+        // 3. Filter actions
+        List<DroneAction> availableActions = GetAvailableActions(visionState);
+
+        if (availableActions.Count == 0)
         {
-            // Set new target ahead
-            targetPosition = drone.transform.position + drone.transform.forward * moveDistance;
-            isMovingToTarget = true;
-            Debug.Log($"Decision: Moving forward to {targetPosition}");
-        }
-        else
-        {
-            // Obstacle ahead - turn in place
+            Debug.LogWarning("No available actions! Stopping.");
             drone.Stop();
-
-            if (vision.IsRightClear(moveDistance))
-            {
-                drone.transform.Rotate(Vector3.up, 90f);
-                Debug.Log("Decision: Turned right");
-            }
-            else if (vision.IsLeftClear(moveDistance))
-            {
-                drone.transform.Rotate(Vector3.up, -90f);
-                Debug.Log("Decision: Turned left");
-            }
-            else
-            {
-                drone.transform.Rotate(Vector3.up, 180f);
-                Debug.Log("Decision: Turned around");
-            }
-
-            // Start pause after turning
-            isPaused = true;
-            pauseTimer = 0f;
+            return;
         }
+
+        // 4. Decide using MinMax
+        DroneAction chosen = minMax.Decide(
+            availableActions,
+            visionState,
+            drone.transform.position,
+            goalPosition,
+            initialDistance,
+            vision.closestObstacleDistance,
+            drone.totalBattery - drone.currentBattery,
+            drone.totalBattery,
+            collisionDetected,
+            visitedCells,
+            moveDistance,
+            true
+       
+        );
+
+        Debug.Log($"MinMax chose action: {chosen}");
+        // 5. Execute
+        ExecuteAction(chosen);
     }
+
+    VisionState GetVisionState()
+    {
+        return new VisionState
+        {
+            forwardClear = vision.IsForwardClear(moveDistance),
+            leftClear = vision.IsLeftClear(moveDistance),
+            rightClear = vision.IsRightClear(moveDistance)
+        };
+    }
+
+
+    // NEW METHOD: Get only valid actions
+    List<DroneAction> GetAvailableActions(VisionState vision)
+    {
+        List<DroneAction> actions = new List<DroneAction>();
+
+        if (vision.forwardClear)
+            actions.Add(DroneAction.MoveForward);
+
+        if (vision.leftClear)
+            actions.Add(DroneAction.TurnLeft);
+
+        if (vision.rightClear)
+            actions.Add(DroneAction.TurnRight);
+
+        actions.Add(DroneAction.TurnAround);
+        actions.Add(DroneAction.Stop);
+
+        return actions;
+    }
+
+
+    void ExecuteAction(DroneAction action)
+    {
+        Debug.Log($"=== EXECUTING: {action} ===");
+
+        switch (action)
+        {
+            case DroneAction.MoveForward:
+                targetPosition = drone.transform.position + drone.transform.forward * moveDistance;
+                isMovingToTarget = true;
+                isPaused = false;               // ✅ DO NOT PAUSE
+                drone.DrainBattery(drone.batteryDrainPerMove);
+                Debug.Log($"Moving forward to {targetPosition}");
+                visitedCells.Add(GetCell(drone.transform.position));
+                return; // ⬅️ VERY IMPORTANT
+
+            case DroneAction.TurnLeft:
+                drone.TurnLeft();
+                break;
+
+            case DroneAction.TurnRight:
+                drone.TurnRight();
+                break;
+
+            case DroneAction.TurnAround:
+                drone.TurnAround();
+                break;
+
+            case DroneAction.Stop:
+                drone.Stop();
+                break;
+        }
+
+        // Only pause for NON-movement actions
+        isMovingToTarget = false;
+        isPaused = true;
+        pauseTimer = 0f;
+    }
+
 
     void DisplayVisionInfo()
     {
         string info = $"=== Vision Status ===\n";
         info += $"Moving: {isMovingToTarget}\n";
         info += $"Paused: {isPaused}\n";
+        info += $"Battery: {drone.GetBatteryPercentage():F1}%\n";
 
         if (isMovingToTarget)
         {
@@ -149,29 +237,31 @@ public class GameManager : MonoBehaviour
 
         info += $"Path Clear: {vision.isPathClear}\n";
         info += $"Closest Obstacle: {vision.closestObstacleDistance:F2}m\n";
-        info += $"Forward Clear: {vision.IsForwardClear(10f)}\n";
-        info += $"Right Clear: {vision.IsRightClear(10f)}\n";
-        info += $"Left Clear: {vision.IsLeftClear(10f)}\n";
+        info += $"Forward Clear: {vision.IsForwardClear(moveDistance)}\n";
+        info += $"Right Clear: {vision.IsRightClear(moveDistance)}\n";
+        info += $"Left Clear: {vision.IsLeftClear(moveDistance)}\n";
+        info += $"Distance to Goal: {Vector3.Distance(drone.transform.position, goalPosition):F2}m\n";
 
         Debug.Log(info);
     }
 
-    // Visualize in Scene view
     void OnDrawGizmos()
     {
         if (isMovingToTarget)
         {
-            // Draw target position
             Gizmos.color = Color.cyan;
             Gizmos.DrawWireSphere(targetPosition, 0.5f);
             Gizmos.DrawLine(drone.transform.position, targetPosition);
-
-            // Draw arrival threshold
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(targetPosition, arrivalThreshold);
         }
 
-        // Draw current state (green = moving/deciding, red = paused)
+        // Draw goal
+        Gizmos.color = Color.green;
+        Gizmos.DrawWireSphere(goalPosition, 1f);
+        Gizmos.DrawLine(drone.transform.position, goalPosition);
+
+        // State indicator
         Gizmos.color = isPaused ? Color.red : Color.green;
         Gizmos.DrawWireSphere(drone.transform.position + Vector3.up * 2, 0.3f);
     }

@@ -1470,7 +1470,9 @@ MonoBehaviour:
   autoNavigate: 0
   moveDistance: 10
   arrivalThreshold: 0.01
-  pauseDuration: 0.5
+  pauseDuration: 0.25
+  goalPosition: {x: -45, y: 0.00000053098483, z: 35}
+  collisionDetected: 0
 --- !u!4 &503158139
 Transform:
   m_ObjectHideFlags: 0
@@ -5611,6 +5613,10 @@ MonoBehaviour:
   moveSpeed: 5
   rotationSpeed: 100
   hoverForce: 9.81
+  totalBattery: 1000
+  currentBattery: 100
+  batteryDrainPerMove: 2
+  batteryDrainPerTurn: 0.5
 --- !u!54 &1483002577
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -6456,7 +6462,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: dab3969b6d12d39418d6ca045f2ebc1c, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -44.176506
+      value: -45
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: dab3969b6d12d39418d6ca045f2ebc1c, type: 3}
       propertyPath: m_LocalPosition.y
@@ -6464,7 +6470,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: dab3969b6d12d39418d6ca045f2ebc1c, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 34.82449
+      value: 35
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: dab3969b6d12d39418d6ca045f2ebc1c, type: 3}
       propertyPath: m_LocalRotation.w
